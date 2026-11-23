@@ -20,10 +20,13 @@ import settingRoutes from './routes/settings'
 import notificationRoutes from './routes/notifications'
 import ownerRoutes from './routes/owners'
 import searchRoutes from './routes/search'
+import publicRoutes from './routes/public'
+import adminRoutes from './routes/admin'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
 import { prisma } from './prisma'
+import { startReminderScheduler, stopReminderScheduler } from './services/reminders'
 
 dotenv.config()
 
@@ -61,6 +64,8 @@ app.use('/api/settings', settingRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/owners', ownerRoutes)
 app.use('/api/search', searchRoutes)
+app.use('/api/public', publicRoutes)
+app.use('/api/admin', adminRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)
@@ -71,11 +76,13 @@ export function start(port: number = PORT) {
   server = app.listen(port, () => {
     console.log(`EstateOS API listening on port ${port}`)
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
+    startReminderScheduler()
   })
   return server
 }
 
 export async function shutdown(): Promise<void> {
+  stopReminderScheduler()
   await new Promise<void>((resolve) => {
     if (!server) return resolve()
     server.close(() => resolve())

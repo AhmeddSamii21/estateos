@@ -10,8 +10,10 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { FINANCE_ROLES, MANAGEMENT_ROLES, organizationIdOf, requireAnyRole, userIdOf } from '../utils/scope'
 import {
+  booleanValue,
   dateValue,
   enumValue,
+  numberValue,
   optionalString,
   pagination,
   requiredString
@@ -19,17 +21,17 @@ import {
 import { commissionAmount, convertToBase, parseMoney, parseRate, receivedAmount } from '../utils/money'
 import { logAudit } from '../utils/audit'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { baseCurrencyOf, listExchangeRatesForOrg, resolveCurrency, upsertCurrencyRecord } from '../utils/fx'
 
 const router = Router()
 router.use(authMiddleware, requireRole(FINANCE_ROLES))
 
-async function baseCurrencyOf(organizationId: string): Promise<string> {
-  const organization = await prisma.organization.findFirst({
-    where: { id: organizationId, deletedAt: null },
-    select: { baseCurrency: true, currency: true }
-  })
-  if (!organization) throw createError('Organization not found', 404)
-  return organization.baseCurrency || organization.currency || 'USD'
+// baseCurrencyOf is shared with the settings FX endpoints via utils/fx so the
+// consolidated totals always use the same organization-wide base currency.
+function normalizeCurrencyCode(value: unknown, field: string): string {
+  const code = requiredString(value, field, 3).toUpperCase()
+  if (!/^[A-Z]{3}$/.test(code)) throw createError(`${field} must be a 3-letter ISO currency code`, 400)
+  return code
 }
 
 async function assertDeal(dealId: string, organizationId: string) {
@@ -58,6 +60,99 @@ async function assertUser(userId: string, organizationId: string) {
   if (!user) throw createError('User not found', 404)
   return user
 }
+
+// ---------------------------------------------------------------------------
+// Exchange rates / currencies (FX management)
+// ---------------------------------------------------------------------------
+
+router.get('/exchange-rates', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const data = await listExchangeRatesForOrg(organizationId)
+    res.json({ success: true, data })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/exchange-rates/currencies', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    requireAnyRole(req, FINANCE_ROLES)
+    const code = normalizeCurrencyCode(req.body?.code, 'code')
+    const name = optionalString(req.body?.name, 'name', 100) || code
+    const symbol = optionalString(req.body?.symbol, 'symbol', 10) || code
+    const decimals = numberValue(req.body?.decimals, 'decimals', { min: 0, max: 6 }) ?? 2
+    const isEnabled = booleanValue(req.body?.isEnabled, 'isEnabled', true)
+
+    const currency = await prisma.$transaction(async (tx) => {
+      const saved = await upsertCurrencyRecord(tx, organizationId, code, {
+        name,
+        symbol,
+        decimals: Math.trunc(decimals),
+        isEnabled
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'CURRENCY_UPSERTED',
+        entityType: 'Currency',
+        entityId: saved.id,
+        details: { code, name, symbol, decimals: Math.trunc(decimals), isEnabled }
+      })
+      return saved
+    })
+    res.status(201).json({ success: true, data: currency, message: 'Currency saved successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/exchange-rates', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    requireAnyRole(req, FINANCE_ROLES)
+    const fromCode = normalizeCurrencyCode(req.body?.fromCurrency ?? req.body?.from, 'fromCurrency')
+    const toCode = normalizeCurrencyCode(req.body?.toCurrency ?? req.body?.to, 'toCurrency')
+    if (fromCode === toCode) throw createError('fromCurrency and toCurrency must be different', 400)
+    const rate = parseRate(req.body?.rate, 'rate')
+    if (!rate) throw createError('rate is required', 400)
+    const effectiveAt = dateValue(req.body?.effectiveAt, 'effectiveAt') || new Date()
+    const note = optionalString(req.body?.note, 'note', 500)
+
+    const fromCurrency = await resolveCurrency(organizationId, fromCode)
+    const toCurrency = await resolveCurrency(organizationId, toCode)
+
+    const record = await prisma.$transaction(async (tx) => {
+      const created = await tx.exchangeRate.create({
+        data: {
+          organizationId,
+          fromCurrencyId: fromCurrency.id,
+          toCurrencyId: toCurrency.id,
+          rate,
+          effectiveAt,
+          note
+        },
+        include: {
+          fromCurrency: { select: { id: true, code: true, name: true, symbol: true } },
+          toCurrency: { select: { id: true, code: true, name: true, symbol: true } }
+        }
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'EXCHANGE_RATE_UPSERTED',
+        entityType: 'ExchangeRate',
+        entityId: created.id,
+        details: { fromCurrency: fromCode, toCurrency: toCode, rate, effectiveAt: effectiveAt.toISOString() }
+      })
+      return created
+    })
+    res.status(201).json({ success: true, data: record, message: 'Exchange rate saved successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Payments

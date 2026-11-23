@@ -28,6 +28,7 @@ const routes = [
       { path: 'finance/payments', name: 'Payments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'payments' }, meta: { title: 'Payments', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/expenses', name: 'Expenses', component: () => import('@/views/ResourceView.vue'), props: { resource: 'expenses' }, meta: { title: 'Expenses', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/commissions', name: 'Commissions', component: () => import('@/views/ResourceView.vue'), props: { resource: 'commissions' }, meta: { title: 'Commissions', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
+      { path: 'finance/exchange-rates', name: 'ExchangeRates', component: () => import('@/views/SettingsView.vue'), props: { fxOnly: true }, meta: { title: 'Exchange rates', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'maintenance', name: 'Maintenance', component: () => import('@/views/ResourceView.vue'), props: { resource: 'maintenance' }, meta: { title: 'Maintenance' } },
       { path: 'documents', name: 'Documents', component: () => import('@/views/DocumentsView.vue'), meta: { title: 'Documents' } },
       { path: 'search', name: 'AdvancedSearch', component: () => import('@/views/AdvancedSearchView.vue'), meta: { title: 'Advanced Search & Map' } },
@@ -36,9 +37,10 @@ const routes = [
       { path: 'notifications', name: 'Notifications', component: () => import('@/views/NotificationsView.vue'), meta: { title: 'Notifications' } },
       { path: 'activity', name: 'Activity', component: () => import('@/views/ActivityView.vue'), meta: { title: 'Activity' } },
       { path: 'users', name: 'Users', component: () => import('@/views/ResourceView.vue'), props: { resource: 'users' }, meta: { title: 'Users', roles: ['ADMIN', 'MANAGER'] } },
-      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER'] } }
+      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } }
     ]
   },
+  { path: '/p/:shareToken', name: 'PublicProperty', component: () => import('@/views/PublicPropertyView.vue'), meta: { title: 'Property details' } },
   { path: '/:catchAll(.*)', name: 'NotFound', component: () => import('@/views/NotFound.vue'), meta: { title: 'Not Found' } }
 ]
 

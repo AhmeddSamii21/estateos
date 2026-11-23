@@ -22,9 +22,22 @@
       </section>
       <p class="fx-note">
         {{ store.isArabic
-          ? 'يتم تجميع المجاميع حسب العملة المسجلة دون أي تحويل بين العملات.'
-          : 'Totals are grouped by recorded currency; no FX conversion is applied.' }}
+          ? 'تُعرض المجاميع حسب العملة المسجلة، مع إجمالي اختياري مُحوّل إلى العملة الأساسية.'
+          : 'Totals are grouped by recorded currency, with an optional base-currency equivalent.' }}
       </p>
+      <div v-if="baseTotals" class="base-totals">
+        <span>
+          {{ store.isArabic ? 'قيمة المحفظة بـ' : 'Portfolio in' }} {{ baseTotals.baseCurrency }}:
+          <strong>{{ money(baseTotals.portfolio, baseTotals.baseCurrency) }}</strong>
+        </span>
+        <span>
+          {{ store.isArabic ? 'المباعة بـ' : 'Sold in' }} {{ baseTotals.baseCurrency }}:
+          <strong>{{ money(baseTotals.sold, baseTotals.baseCurrency) }}</strong>
+        </span>
+        <small v-if="baseTotals.missing.length">
+          {{ store.isArabic ? 'بدون سعر صرف: ' : 'No rate for: ' }}{{ baseTotals.missing.join(', ') }}
+        </small>
+      </div>
 
       <section class="panel">
         <div class="panel-head">
@@ -54,9 +67,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { apiGet } from '@/api/client'
 import { useStore } from '@/stores'
-import type { Property } from '@/types'
+import type { ExchangeRateOverview, Property } from '@/types'
 
 interface CurrencyTotal {
   currency: string
@@ -65,9 +79,19 @@ interface CurrencyTotal {
 }
 
 const store = useStore()
+const fxOverview = ref<ExchangeRateOverview | null>(null)
 
-onMounted(() => {
+onMounted(async () => {
   if (!store.allProperties.length) void store.fetchProperties({ limit: 100 })
+  // FX totals are optional: the endpoint is finance-only, so agents keep the
+  // existing per-currency breakdowns without a failed request.
+  if (['ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(store.user?.role || '')) {
+    try {
+      fxOverview.value = (await apiGet<ExchangeRateOverview>('/settings/exchange-rates')).data
+    } catch {
+      fxOverview.value = null
+    }
+  }
 })
 
 const recent = computed(() => store.allProperties.slice(0, 6))
@@ -92,6 +116,28 @@ function groupByCurrency(properties: Property[]): CurrencyTotal[] {
 
 const portfolioByCurrency = computed(() => groupByCurrency(store.allProperties))
 const soldByCurrency = computed(() => groupByCurrency(sold.value))
+
+const baseTotals = computed(() => {
+  const fx = fxOverview.value
+  if (!fx) return null
+  const rates = new Map(fx.currencies.map((currency) => [currency.code, Number(currency.toBaseRate)]))
+  const missing = new Set<string>()
+  const convert = (rows: CurrencyTotal[]): number => rows.reduce((total, row) => {
+    const rate = rates.get(row.currency)
+    if (row.currency === fx.baseCurrency) return total + row.total
+    if (!Number.isFinite(rate) || !rate) {
+      missing.add(row.currency)
+      return total
+    }
+    return total + row.total * rate
+  }, 0)
+  return {
+    baseCurrency: fx.baseCurrency,
+    portfolio: convert(portfolioByCurrency.value),
+    sold: convert(soldByCurrency.value),
+    missing: Array.from(missing).sort()
+  }
+})
 
 function compact(amount: number): string {
   return new Intl.NumberFormat(store.isArabic ? 'ar-SA' : 'en-US', {
@@ -151,6 +197,8 @@ h2 { margin: 0; font-size: 1.05rem; }
 .stat-value-money { font-size: 1rem; line-height: 1.35; }
 .stat-hint { font-size: 0.72rem; color: #9ca3af; }
 .fx-note { margin: -0.6rem 0 0; font-size: 0.75rem; color: #6b7280; }
+.base-totals { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: center; margin-top: -0.4rem; padding: 0.7rem 1rem; background: #eef2ff; border-radius: 10px; font-size: 0.82rem; color: #3730a3; }
+.base-totals small { color: #6b7280; }
 .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.2rem; border-bottom: 1px solid #eef2f7; }
 .panel-head a { color: #4f46e5; font-size: 0.84rem; text-decoration: none; }

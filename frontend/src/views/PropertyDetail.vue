@@ -53,6 +53,30 @@
         <textarea :value="sharePreview" readonly rows="12" @focus="selectSharePreview"></textarea>
       </section>
 
+      <section v-if="canEditProperty" class="panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'رابط المشاركة العام' : 'Public share link' }}</h2>
+          <span v-if="shareLink?.enabled" class="tag">{{ store.isArabic ? 'مفعّل' : 'Active' }}</span>
+        </div>
+        <p class="muted">
+          {{ store.isArabic
+            ? 'يتيح الرابط للعملاء عرض العقار دون تسجيل دخول. يمكن تدوير الرابط أو إلغاؤه في أي وقت.'
+            : 'Anyone with the link can view the property without signing in. Rotate or revoke it at any time.' }}
+        </p>
+        <div v-if="shareLink?.enabled" class="share-controls">
+          <input :value="shareLink.url || ''" readonly aria-label="Share URL" @focus="selectSharePreview" />
+          <button class="btn btn-quiet" type="button" :disabled="shareBusy" @click="onCopyShareLink">{{ store.isArabic ? 'نسخ' : 'Copy' }}</button>
+          <button class="btn btn-quiet" type="button" :disabled="shareBusy" @click="onRotateShareLink">{{ store.isArabic ? 'تدوير' : 'Rotate' }}</button>
+          <button class="btn btn-danger" type="button" :disabled="shareBusy" @click="onRevokeShareLink">{{ store.isArabic ? 'إلغاء' : 'Revoke' }}</button>
+        </div>
+        <button v-else class="btn btn-quiet" type="button" :disabled="shareBusy" @click="onGenerateShareLink">
+          <i class="fas fa-link"></i> {{ store.isArabic ? 'إنشاء رابط عام' : 'Generate public link' }}
+        </button>
+        <small v-if="shareLink?.expiresAt" class="share-expiry">
+          {{ store.isArabic ? 'تنتهي في' : 'Expires' }}: {{ formatDate(shareLink.expiresAt) }}
+        </small>
+      </section>
+
       <section class="panel">
         <h2>{{ store.isArabic ? 'المواصفات' : 'Specifications' }}</h2>
         <dl class="facts">
@@ -164,7 +188,7 @@ import { downloadDocument } from '@/utils/documents'
 import { loadPropertyImageObjectUrl } from '@/utils/propertyImages'
 import { buildClientPropertySummary } from '@/utils/propertyShare'
 import { useStore } from '@/stores'
-import type { DocumentRecord, PropertyDetail, PropertyImage } from '@/types'
+import type { DocumentRecord, PropertyDetail, PropertyImage, PropertyShareLink } from '@/types'
 
 const props = defineProps<{ id?: string }>()
 const store = useStore()
@@ -175,6 +199,8 @@ const actionError = ref('')
 const shareMessage = ref('')
 const sharePreview = ref('')
 const sharing = ref(false)
+const shareBusy = ref(false)
+const shareLink = ref<PropertyShareLink | null>(null)
 const galleryError = ref('')
 const uploadingImages = ref(false)
 const galleryBusy = ref(false)
@@ -280,6 +306,63 @@ async function onShareSummary(): Promise<void> {
   } catch {
     // Activity logging is secondary to sharing the summary.
   }
+}
+
+async function loadShareLink(): Promise<void> {
+  if (!property.value || !canEditProperty.value) {
+    shareLink.value = null
+    return
+  }
+  try {
+    shareLink.value = (await apiGet<PropertyShareLink>(`/properties/${property.value.id}/share-link`)).data
+  } catch {
+    shareLink.value = null
+  }
+}
+
+async function onGenerateShareLink(): Promise<void> {
+  if (!property.value || shareBusy.value) return
+  shareBusy.value = true
+  actionError.value = ''
+  try {
+    shareLink.value = (await apiPost<PropertyShareLink>(`/properties/${property.value.id}/share-link`, {})).data
+    shareMessage.value = store.isArabic ? 'تم إنشاء رابط المشاركة.' : 'Public share link created.'
+  } catch (error) {
+    actionError.value = errorMessage(error)
+  } finally {
+    shareBusy.value = false
+  }
+}
+
+async function onRotateShareLink(): Promise<void> {
+  // Rotation reuses the create endpoint: it issues a new token and invalidates
+  // the previous one without changing the property record itself.
+  if (!window.confirm(store.isArabic ? 'سيتوقف الرابط القديم عن العمل. متابعة؟' : 'The old link will stop working. Continue?')) return
+  await onGenerateShareLink()
+}
+
+async function onRevokeShareLink(): Promise<void> {
+  if (!property.value || shareBusy.value) return
+  if (!window.confirm(store.isArabic ? 'إلغاء رابط المشاركة؟' : 'Revoke the public share link?')) return
+  shareBusy.value = true
+  actionError.value = ''
+  try {
+    await apiDelete(`/properties/${property.value.id}/share-link`)
+    shareLink.value = null
+    shareMessage.value = store.isArabic ? 'تم إلغاء رابط المشاركة.' : 'Public share link revoked.'
+  } catch (error) {
+    actionError.value = errorMessage(error)
+  } finally {
+    shareBusy.value = false
+  }
+}
+
+async function onCopyShareLink(): Promise<void> {
+  const url = shareLink.value?.url
+  if (!url) return
+  shareMessage.value = await copyText(url)
+    ? (store.isArabic ? 'تم نسخ رابط المشاركة.' : 'Share link copied.')
+    : (store.isArabic ? 'تعذّر النسخ تلقائيًا.' : 'Automatic copy was blocked.')
 }
 
 async function onStatusChange(event: Event): Promise<void> {
@@ -415,9 +498,12 @@ async function removeImage(imageId: string): Promise<void> {
 }
 
 watch(property, () => {
-  if (property.value) void loadGalleryImages()
-  else {
+  if (property.value) {
+    void loadGalleryImages()
+    void loadShareLink()
+  } else {
     galleryImages.value = []
+    shareLink.value = null
     revokeImageUrls()
   }
 }, { immediate: true })
@@ -472,5 +558,8 @@ h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .notice { background: #ecfdf5; color: #065f46; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .share-fallback textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.7rem; font-family: inherit; font-size: 0.84rem; resize: vertical; }
+.share-controls { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.share-controls input { flex: 1 1 280px; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.82rem; }
+.share-expiry { display: block; margin-top: 0.5rem; color: #6b7280; font-size: 0.76rem; }
 select { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.4rem 0.6rem; font-size: 0.84rem; }
 </style>

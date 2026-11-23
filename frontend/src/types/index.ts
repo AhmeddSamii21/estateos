@@ -353,6 +353,81 @@ export interface TenantSettings {
   updatedAt: string
 }
 
+export interface ManagedCurrency {
+  id: string
+  code: string
+  name: string
+  symbol: string
+  decimals: number
+  isEnabled: boolean
+  isBaseCurrency: boolean
+  toBaseRate: string | null
+  fromBaseRate: string | null
+  toBaseEffectiveAt: string | null
+  fromBaseEffectiveAt: string | null
+}
+
+export interface ManagedExchangeRate {
+  id: string
+  fromCurrency: { code: string }
+  toCurrency: { code: string }
+  rate: MoneyValue
+  effectiveAt: string
+  note?: string | null
+}
+
+export interface ExchangeRateOverview {
+  baseCurrency: string
+  currencies: ManagedCurrency[]
+  rates: ManagedExchangeRate[]
+}
+
+export interface PropertyShareLink {
+  enabled: boolean
+  token: string | null
+  url: string | null
+  expiresAt: string | null
+  createdAt: string | null
+}
+
+export interface PublicProperty {
+  referenceNumber: string
+  title: string
+  description: string | null
+  type: string
+  status: string
+  classification: string
+  address: string | null
+  city: string | null
+  state: string | null
+  country: string | null
+  postalCode: string | null
+  latitude: MoneyValue | null
+  longitude: MoneyValue | null
+  area: MoneyValue | null
+  areaUnit: string
+  bedrooms: number
+  bathrooms: number
+  floors: number | null
+  yearBuilt: number | null
+  condition: string
+  price: MoneyValue
+  currency: string
+  negotiable: boolean
+  availableFrom: string | null
+  shareExpiresAt: string | null
+  images: Array<{
+    id: string
+    originalName: string | null
+    mimeType: string | null
+    size: number | null
+    caption: string | null
+    isPrimary: boolean
+    sortOrder: number
+    contentUrl: string
+  }>
+}
+
 export interface GroupCount<T extends string = string> {
   [key: string]: unknown
   status?: T
@@ -379,6 +454,12 @@ export interface ReportSummary {
     commissions: Array<{ currency: string; amount: MoneyValue; baseAmount: MoneyValue }>
     paymentTotalBase: MoneyValue
     expenseTotalBase: MoneyValue
+    fx?: {
+      baseCurrency: string
+      convertedPaymentTotal: string | null
+      missingCurrencies: string[]
+      hasRates: boolean
+    }
   }
   maintenance: {
     byStatus: GroupCount[]

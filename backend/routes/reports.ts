@@ -15,6 +15,7 @@ import { REPORT_ROLES, leadScope, organizationIdOf } from '../utils/scope'
 import { dateValue } from '../utils/validation'
 import { sumMoney } from '../utils/money'
 import { appointmentScope } from '../utils/appointments'
+import { summarizeCurrencyAmounts } from '../utils/fx'
 
 const router = Router()
 router.use(authMiddleware, requireRole(REPORT_ROLES))
@@ -99,6 +100,11 @@ router.get('/summary', async (req, res, next) => {
       })
     ])
 
+    const fxSummary = await summarizeCurrencyAmounts(
+      organizationId,
+      paymentSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount) }))
+    )
+
     const available = propertiesByStatus.find((row) => row.status === PropertyStatus.AVAILABLE)?._count._all || 0
     const activeDeals = dealCounts.filter((deal) => deal.status === DealStatus.ACTIVE || deal.status === DealStatus.PENDING).length
     const completedDeals = dealCounts.filter((deal) => deal.status === DealStatus.COMPLETED).length
@@ -120,7 +126,13 @@ router.get('/summary', async (req, res, next) => {
           expenses: expenseSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
           commissions: commissionSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
           paymentTotalBase: sumMoney(paymentSums.map((row) => moneyString(row._sum.baseAmount || row._sum.amount))),
-          expenseTotalBase: sumMoney(expenseSums.map((row) => moneyString(row._sum.baseAmount || row._sum.amount)))
+          expenseTotalBase: sumMoney(expenseSums.map((row) => moneyString(row._sum.baseAmount || row._sum.amount))),
+          fx: {
+            baseCurrency: fxSummary.baseCurrency,
+            convertedPaymentTotal: fxSummary.convertedTotal,
+            missingCurrencies: fxSummary.missingCurrencies,
+            hasRates: fxSummary.hasRates
+          }
         },
         maintenance: {
           byStatus: maintenanceCounts,

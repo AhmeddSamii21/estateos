@@ -22,6 +22,8 @@ import {
   pagination,
   requiredString
 } from '../utils/validation'
+import crypto from 'node:crypto'
+import { buildPublicShareUrl } from '../utils/share'
 import { parseMoney } from '../utils/money'
 import { buildPropertySearch } from '../utils/search'
 import { validatePropertyTransition } from '../utils/propertyStatus'
@@ -316,6 +318,90 @@ router.post('/:id/share-summary', async (req, res, next) => {
       })
     })
     res.json({ success: true, message: 'Property share summary recorded' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+function shareUrl(token: string, req: Request): string {
+  return buildPublicShareUrl(token, {
+    publicAppUrl: process.env.PUBLIC_APP_URL,
+    origin: req.get('origin')
+  })
+}
+
+router.get('/:id/share-link', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const property = await findAccessibleProperty(id, req)
+    const enabled = Boolean(property.publicShareEnabled && property.publicShareToken)
+    const expired = Boolean(property.publicShareExpiresAt && property.publicShareExpiresAt.getTime() < Date.now())
+    res.json({
+      success: true,
+      data: {
+        enabled: enabled && !expired,
+        token: enabled && !expired ? property.publicShareToken : null,
+        url: enabled && !expired && property.publicShareToken ? shareUrl(property.publicShareToken, req) : null,
+        expiresAt: property.publicShareExpiresAt,
+        createdAt: property.publicShareCreatedAt
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/share-link', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const userId = userIdOf(req)
+    await findAccessibleProperty(id, req, { forWrite: true })
+    const expiresAt = dateValue(req.body?.expiresAt, 'expiresAt')
+    const token = crypto.randomBytes(24).toString('base64url')
+    const property = await prisma.$transaction(async (tx) => {
+      const updated = await tx.property.update({
+        where: { id },
+        data: {
+          publicShareToken: token,
+          publicShareEnabled: true,
+          publicShareExpiresAt: expiresAt || null,
+          publicShareCreatedAt: new Date()
+        }
+      })
+      await logAudit(tx, { userId, action: 'PROPERTY_SHARE_LINK_CREATED', entityType: 'Property', entityId: id, details: { expiresAt: expiresAt?.toISOString() || null } })
+      await logPropertyActivity(tx, { propertyId: id, userId, action: 'PROPERTY_SHARE_LINK_CREATED' })
+      return updated
+    })
+    res.status(201).json({
+      success: true,
+      data: {
+        enabled: true,
+        token: property.publicShareToken,
+        url: shareUrl(token, req),
+        expiresAt: property.publicShareExpiresAt,
+        createdAt: property.publicShareCreatedAt
+      },
+      message: 'Public share link created'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/:id/share-link', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const userId = userIdOf(req)
+    await findAccessibleProperty(id, req, { forWrite: true })
+    await prisma.$transaction(async (tx) => {
+      await tx.property.update({
+        where: { id },
+        data: { publicShareEnabled: false, publicShareToken: null, publicShareExpiresAt: null }
+      })
+      await logAudit(tx, { userId, action: 'PROPERTY_SHARE_LINK_REVOKED', entityType: 'Property', entityId: id })
+      await logPropertyActivity(tx, { propertyId: id, userId, action: 'PROPERTY_SHARE_LINK_REVOKED' })
+    })
+    res.json({ success: true, message: 'Public share link revoked' })
   } catch (error) {
     next(error)
   }

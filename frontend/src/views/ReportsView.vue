@@ -64,11 +64,15 @@
           <div><span>{{ store.isArabic ? 'العمولات' : 'Commissions' }}</span><strong>{{ breakdown(commissionTotals) }}</strong></div>
           <div><span>{{ store.isArabic ? 'الصافي حسب العملة' : 'Net by currency' }}</span><strong>{{ breakdown(netTotals) }}</strong></div>
           <div><span>{{ store.isArabic ? 'تكلفة الصيانة' : 'Maintenance cost' }}</span><strong>{{ maintenanceCostLabel }}</strong></div>
+          <div v-if="summary.finance.fx">
+            <span>{{ store.isArabic ? 'الدفعات بعملة الأساس' : 'Payments in base currency' }}</span>
+            <strong>{{ baseCurrencyTotalLabel }}</strong>
+          </div>
         </div>
         <p class="finance-note">
           {{ store.isArabic
-            ? 'يتم عرض المجاميع حسب العملة المصدر دون تحويل بين العملات. عملة تكلفة الصيانة غير متوفرة في استجابة API.'
-            : 'Amounts are grouped by source currency; no FX conversion is applied. Maintenance-cost currency is not supplied by the API.' }}
+            ? 'تُعرض المجاميع حسب العملة المصدر، مع إجمالي الدفعات المُحوّل إلى العملة الأساسية عند توفر الأسعار. عملة تكلفة الصيانة غير متوفرة في استجابة API.'
+            : 'Amounts are grouped by source currency, with payments also converted to the base currency when rates are available. Maintenance-cost currency is not supplied by the API.' }}
         </p>
       </section>
 
@@ -252,6 +256,14 @@ function onExport(): void {
       if (!totals.length) add(section, t('No data', 'لا توجد بيانات'))
       for (const total of totals) add(section, total.currency, { amount: total.amount.toFixed(2), currency: total.currency })
     }
+    const fx = report.finance.fx
+    if (fx) {
+      add(t('Finance', 'المالية'), t('Payments in base currency', 'الدفعات بعملة الأساس'), {
+        amount: fx.convertedPaymentTotal ?? '',
+        currency: fx.baseCurrency,
+        note: fx.missingCurrencies.length ? `${t('No rate for', 'بدون سعر')}: ${fx.missingCurrencies.join(', ')}` : ''
+      })
+    }
     add(t('Maintenance', 'الصيانة'), t('Cost', 'التكلفة'), {
       amount: Number(report.maintenance.totalCost || 0).toFixed(2),
       currency: 'UNSPECIFIED',
@@ -340,6 +352,18 @@ const netTotals = computed<CurrencyTotal[]>(() => {
 const maintenanceCostLabel = computed(() => {
   const total = Number(summary.value?.maintenance.totalCost || 0)
   return `${compact(total)} · ${store.isArabic ? 'العملة غير متوفرة' : 'currency not supplied'}`
+})
+
+const baseCurrencyTotalLabel = computed(() => {
+  const fx = summary.value?.finance.fx
+  if (!fx) return '—'
+  if (fx.convertedPaymentTotal === null) {
+    return store.isArabic ? 'أسعار مفقودة' : 'rates unavailable'
+  }
+  const label = money(Number(fx.convertedPaymentTotal), fx.baseCurrency)
+  return fx.missingCurrencies.length
+    ? `${label} (${store.isArabic ? 'بدون سعر' : 'no rate'}: ${fx.missingCurrencies.join(', ')})`
+    : label
 })
 
 const cards = computed(() => [

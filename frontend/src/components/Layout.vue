@@ -46,6 +46,9 @@
           <router-link to="/finance/commissions" class="nav-link nav-child">
             <i class="fas fa-percent"></i><span>{{ t('Commissions') }}</span>
           </router-link>
+          <router-link to="/finance/exchange-rates" class="nav-link nav-child">
+            <i class="fas fa-arrow-right-arrow-left"></i><span>{{ t('Exchange rates') }}</span>
+          </router-link>
           <router-link to="/reports" class="nav-link nav-child">
             <i class="fas fa-chart-column"></i><span>{{ t('Reports') }}</span>
           </router-link>
@@ -154,6 +157,7 @@ const ArabicLabels: Record<string, string> = {
   Payments: 'المدفوعات',
   Expenses: 'المصروفات',
   Commissions: 'العمولات',
+  'Exchange rates': 'أسعار الصرف',
   Reports: 'التقارير',
   Administration: 'الإدارة',
   Owners: 'المالكون',
