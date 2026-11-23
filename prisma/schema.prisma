@@ -1,0 +1,695 @@
+// EstateOS Team - Prisma schema
+// Standard Prisma Schema Language (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Roles are derived from the application requirements (Admin, Manager,
+// Agent, Accountant) and the existing User.role default (AGENT).
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
+  ACCOUNTANT
+}
+
+// Registration-approval lifecycle for user accounts.
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+// Values used by backend/routes/properties.ts and the legacy locator app.
+enum PropertyType {
+  HOUSE
+  APARTMENT
+  CONDO
+  TOWNHOUSE
+  VILLA
+  LAND
+  COMMERCIAL
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  PENDING
+  RESERVED
+  SOLD
+  RENTED
+  OFF_MARKET
+  UNAVAILABLE
+  UNDER_NEGOTIATION
+}
+
+enum PropertyClassification {
+  SALE
+  RENT
+}
+
+enum AreaUnit {
+  SQ_M
+  SQ_FT
+}
+
+enum PropertyCondition {
+  NEW
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  UNDER_CONSTRUCTION
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  VIEWING
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  VIEWING
+  MEETING
+  CALL
+}
+
+enum DealStatus {
+  DRAFT
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum DealType {
+  SALE
+  RENT
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum ExpenseStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+enum DocumentStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OccupancyStatus {
+  VACANT
+  OWNER_OCCUPIED
+  TENANT_OCCUPIED
+}
+
+model Organization {
+  id            String    @id @default(uuid())
+  name          String
+  slug          String    @unique
+  description   String?
+  address       String?
+  phone         String?
+  email         String?
+  website       String?
+  logoUrl       String?
+  currency      String    @default("USD")
+  baseCurrency  String    @default("USD")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isActive      Boolean   @default(true)
+
+  users         User[]
+  properties    Property[]
+  owners        Owner[]
+  deals         Deal[]
+  settings      Settings?
+  currencies    Currency[]
+  documents     Document[]
+  maintenanceRequests MaintenanceRequest[]
+  notifications Notification[]
+}
+
+model Currency {
+  id            String    @id @default(uuid())
+  code          String    @unique
+  name          String
+  symbol        String
+  decimals      Int       @default(2)
+  isEnabled     Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  fromRates      ExchangeRate[] @relation("ExchangeRateFrom")
+  toRates        ExchangeRate[] @relation("ExchangeRateTo")
+
+  @@index([organizationId])
+}
+
+// Historical exchange-rate snapshots: rates are never recalculated
+// retroactively, so every row keeps its own effective date.
+model ExchangeRate {
+  id            String    @id @default(uuid())
+  fromCurrencyId String
+  toCurrencyId   String
+  rate          Decimal   @db.Decimal(20, 8)
+  effectiveAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  note          String?
+
+  fromCurrency  Currency @relation("ExchangeRateFrom", fields: [fromCurrencyId], references: [id])
+  toCurrency    Currency @relation("ExchangeRateTo", fields: [toCurrencyId], references: [id])
+
+  @@index([fromCurrencyId, toCurrencyId, effectiveAt])
+}
+
+model User {
+  id              String    @id @default(uuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  isActive        Boolean   @default(true)
+
+  email           String    @unique
+  password        String
+  role            Role      @default(AGENT)
+  accountStatus   AccountStatus @default(ACTIVE)
+  statusReason    String?
+  tokenVersion    Int       @default(0)
+  organizationId  String
+  // Selected by backend/routes/properties.ts when including assignedAgent.
+  firstName       String?
+  profileImage    String?
+  lastLoginAt     DateTime?
+  loginCount      Int       @default(0)
+
+  organization    Organization   @relation(fields: [organizationId], references: [id])
+  assignedProperties Property[]   @relation("AssignedAgentProperties")
+  leads           Lead[]
+  appointments    Appointment[]
+  deals           Deal[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  uploadedDocuments Document[]      @relation("DocumentUploader")
+  expenses          Expense[]
+  maintenanceRequests MaintenanceRequest[] @relation("MaintenanceAssignee")
+  propertyActivities PropertyActivity[]
+  commissions        Commission[]
+  createdMaintenanceRequests MaintenanceRequest[] @relation("MaintenanceCreator")
+  uploadedPropertyImages PropertyImage[] @relation("PropertyImageUploader")
+
+  @@index([organizationId])
+  @@index([role])
+  @@index([accountStatus])
+}
+
+model Owner {
+  id             String    @id @default(uuid())
+  organizationId String?
+  firstName      String?
+  lastName       String?
+  companyName    String?
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  country        String?
+  notes          String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  properties     Property[]
+  documents      Document[]
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([isActive, deletedAt])
+}
+
+model Property {
+  id              String    @id @default(uuid())
+  referenceNumber String    @unique
+  title           String
+  description     String?
+  type            PropertyType
+  status          PropertyStatus       @default(AVAILABLE)
+  classification  PropertyClassification @default(SALE)
+  address         String?
+  city            String?
+  state           String?
+  country         String?
+  postalCode      String?
+  latitude        Decimal?  @db.Decimal(10, 7)
+  longitude       Decimal?  @db.Decimal(10, 7)
+  area            Decimal?  @db.Decimal(12, 2)
+  areaUnit        AreaUnit  @default(SQ_M)
+  bedrooms        Int       @default(0)
+  bathrooms       Int       @default(0)
+  floors          Int?
+  yearBuilt       Int?
+  condition       PropertyCondition @default(GOOD)
+  price           Decimal   @default(0) @db.Decimal(14, 2)
+  // Stored as an ISO code; the historical rate is chosen via ExchangeRate.
+  currency        String    @default("USD")
+  negotiable      Boolean   @default(false)
+  featured        Boolean   @default(false)
+  reservedUntil   DateTime?
+  availableFrom   DateTime?
+  occupancyStatus OccupancyStatus?
+  operationalNotes String?
+  saleRentRatio   Decimal?  @db.Decimal(12, 2)
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  ownerId         String?
+  owner           Owner?    @relation(fields: [ownerId], references: [id])
+
+  assignedAgentId String?
+  assignedAgent   User?     @relation("AssignedAgentProperties", fields: [assignedAgentId], references: [id])
+
+  images          PropertyImage[]
+  documents       PropertyDocument[]
+  activities      PropertyActivity[]
+  leads           Lead[]
+  appointments    Appointment[]
+  deals           Deal[]
+  expenses        Expense[]
+  maintenanceRequests MaintenanceRequest[]
+  linkedDocuments Document[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([assignedAgentId])
+  @@index([city])
+  @@index([status])
+  @@index([type])
+  @@index([price])
+  @@index([createdAt])
+}
+
+model PropertyImage {
+  id           String    @id @default(uuid())
+  propertyId   String
+  url          String
+  storageKey   String?
+  originalName String?
+  mimeType     String?
+  size         Int?
+  caption      String?
+  isPrimary    Boolean   @default(false)
+  sortOrder    Int       @default(0)
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("PropertyImageUploader", fields: [uploadedById], references: [id])
+
+  @@index([propertyId])
+  @@index([propertyId, deletedAt])
+  @@index([propertyId, sortOrder])
+}
+
+model PropertyDocument {
+  id         String   @id @default(uuid())
+  propertyId String
+  name       String
+  url        String
+  mimeType   String?
+  createdAt  DateTime @default(now())
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+}
+
+model PropertyActivity {
+  id         String   @id @default(uuid())
+  propertyId String
+  userId     String?
+  action     String
+  details    String?
+  createdAt  DateTime @default(now())
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([propertyId])
+  @@index([createdAt])
+}
+
+model Lead {
+  id                String        @id @default(uuid())
+  firstName         String
+  lastName          String?
+  email             String?
+  phone             String?
+  status            LeadStatus    @default(NEW)
+  source            String?
+  notes             String?
+  budgetMin         Decimal?      @db.Decimal(14, 2)
+  budgetMax         Decimal?      @db.Decimal(14, 2)
+  preferredType     PropertyType?
+  preferredCity     String?
+  preferredBedrooms Int?
+  preferredAreaMin  Decimal?      @db.Decimal(12, 2)
+  preferredAreaMax  Decimal?      @db.Decimal(12, 2)
+  assignedToId      String?
+  propertyId        String?
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?
+
+  assignedTo     User?      @relation(fields: [assignedToId], references: [id])
+  property       Property?  @relation(fields: [propertyId], references: [id])
+  appointments   Appointment[]
+  documents      Document[]
+  deals          Deal[]
+
+  @@index([assignedToId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model Appointment {
+  id          String            @id @default(uuid())
+  title       String?
+  type        AppointmentType   @default(VIEWING)
+  status      AppointmentStatus @default(SCHEDULED)
+  startsAt    DateTime
+  endsAt      DateTime?
+  notes       String?
+  userId      String
+  propertyId  String?
+  leadId      String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  property    Property? @relation(fields: [propertyId], references: [id])
+  lead        Lead?     @relation(fields: [leadId], references: [id])
+
+  @@index([userId])
+  @@index([propertyId])
+  @@index([startsAt])
+}
+
+model Deal {
+  id             String     @id @default(uuid())
+  referenceNumber String?   @unique
+  type           DealType   @default(SALE)
+  status         DealStatus @default(DRAFT)
+  propertyId     String
+  leadId         String?
+  organizationId String
+  userId         String
+  amount         Decimal    @default(0) @db.Decimal(14, 2)
+  currency       String     @default("USD")
+  exchangeRate   Decimal?   @db.Decimal(20, 8)
+  baseAmount     Decimal?   @db.Decimal(14, 2)
+  startedAt      DateTime?
+  dueAt          DateTime?
+  closedAt       DateTime?
+  notes          String?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+  property       Property     @relation(fields: [propertyId], references: [id])
+  payments       Payment[]
+  commissions    Commission[]
+  documents      Document[]
+  expenses       Expense[]
+  lead           Lead?      @relation(fields: [leadId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  dealId         String
+  amount         Decimal       @db.Decimal(14, 2)
+  currency       String        @default("USD")
+  status         PaymentStatus @default(PENDING)
+  method         String?
+  reference      String?
+  notes          String?
+  idempotencyKey String?       @unique
+  exchangeRate   Decimal?      @db.Decimal(20, 8)
+  baseAmount     Decimal?      @db.Decimal(14, 2)
+  paidAt         DateTime?
+  createdById    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  deal        Deal          @relation(fields: [dealId], references: [id])
+  documents   Document[]
+
+  @@unique([dealId, reference])
+  @@index([dealId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Expense {
+  id               String        @id @default(uuid())
+  propertyId       String?
+  dealId           String?
+  responsibleId    String?
+  category         String
+  description      String?
+  amount           Decimal       @db.Decimal(14, 2)
+  currency         String        @default("USD")
+  status           ExpenseStatus @default(PENDING)
+  exchangeRate     Decimal?      @db.Decimal(20, 8)
+  baseAmount       Decimal?      @db.Decimal(14, 2)
+  spentAt          DateTime      @default(now())
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  property    Property? @relation(fields: [propertyId], references: [id])
+  deal        Deal?     @relation(fields: [dealId], references: [id])
+  responsible User?     @relation(fields: [responsibleId], references: [id])
+  documents   Document[]
+
+  @@index([propertyId])
+  @@index([dealId])
+  @@index([status])
+  @@index([spentAt])
+}
+
+model Commission {
+  id               String           @id @default(uuid())
+  dealId           String
+  userId           String?
+  amount           Decimal          @db.Decimal(14, 2)
+  currency         String           @default("USD")
+  rate             Decimal?         @db.Decimal(20, 8)
+  status           CommissionStatus @default(PENDING)
+  notes            String?
+  approvedAt       DateTime?
+  paidAt           DateTime?
+  paymentReference String?
+  exchangeRate     Decimal?         @db.Decimal(20, 8)
+  baseAmount       Decimal?         @db.Decimal(14, 2)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  deal       Deal     @relation(fields: [dealId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([dealId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  organizationId String?
+  type        String
+  title       String
+  message     String
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  entityType  String?
+  entityId    String?
+  actionUrl   String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([userId, isRead, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+}
+
+model Settings {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+  defaultLanguage String  @default("en")
+  defaultCurrency String  @default("USD")
+  data           Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Document {
+  id            String         @id @default(uuid())
+  organizationId String
+  name          String
+  originalName  String
+  storageKey    String         @unique
+  mimeType      String
+  size          Int
+  category      String         @default("OTHER")
+  description   String?
+  notes         String?
+  status        DocumentStatus @default(ACTIVE)
+  uploadedById  String?
+  propertyId    String?
+  ownerId       String?
+  leadId        String?
+  dealId        String?
+  paymentId     String?
+  expenseId     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  uploadedBy   User?         @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  property     Property?     @relation(fields: [propertyId], references: [id])
+  owner        Owner?        @relation(fields: [ownerId], references: [id])
+  lead         Lead?         @relation(fields: [leadId], references: [id])
+  deal         Deal?         @relation(fields: [dealId], references: [id])
+  payment      Payment?      @relation(fields: [paymentId], references: [id])
+  expense      Expense?      @relation(fields: [expenseId], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([category])
+  @@index([propertyId])
+  @@index([dealId])
+  @@index([createdAt])
+}
+
+model MaintenanceRequest {
+  id             String             @id @default(uuid())
+  organizationId String
+  propertyId     String
+  title          String
+  description    String?
+  priority       MaintenancePriority @default(MEDIUM)
+  status         MaintenanceStatus  @default(OPEN)
+  assignedToId   String?
+  createdById    String?
+  cost           Decimal?           @db.Decimal(14, 2)
+  currency       String             @default("USD")
+  dueAt          DateTime?
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  property     Property     @relation(fields: [propertyId], references: [id])
+  assignedTo   User?        @relation("MaintenanceAssignee", fields: [assignedToId], references: [id])
+  createdBy    User?        @relation("MaintenanceCreator", fields: [createdById], references: [id])
+
+  @@index([organizationId])
+  @@index([propertyId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}

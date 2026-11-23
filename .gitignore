@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Generated build output
+dist/
+dist-backend/
+*.tsbuildinfo
+
+# Secrets and local environment (template is explicitly re-included)
+.env
+.env.*
+!.env.example
+
+# Local uploads, generated document storage, and placeholder fixtures
+storage/documents/
+uploads/
+path/
+temp/
+tmp/
+*.tmp
+
+# Logs and test/coverage artifacts
+logs/
+*.log
+coverage/
+.nyc_output/
+
+# Local editor and agent state (not application source)
+.vscode/
+.idea/
+.agents/
+.claude/
+.cursor/
+.devin/
+.DS_Store
+Thumbs.db

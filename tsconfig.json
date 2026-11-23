@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    /* Path mapping */
+    "paths": {
+      "*": ["./*"],
+      "@/*": ["./frontend/src/*"],
+      "@components/*": ["./frontend/src/components/*"],
+      "@views/*": ["./frontend/src/views/*"],
+      "@assets/*": ["./frontend/src/assets/*"],
+      "@utils/*": ["./frontend/src/utils/*"],
+      "@types/*": ["./frontend/src/types/*"],
+      "@stores/*": ["./frontend/src/stores/*"],
+      "@locales/*": ["./frontend/src/locales/*"]
+    }
+  },
+  "include": [
+    "frontend/src/**/*.ts",
+    "frontend/src/**/*.d.ts",
+    "frontend/src/**/*.tsx",
+    "frontend/src/**/*.vue",
+    "backend/**/*.ts",
+    "backend/**/*.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,253 @@
+export interface FieldConfig {
+  key: string
+  label: string
+  type: 'text' | 'number' | 'email' | 'password' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox'
+  options?: string[]
+  required?: boolean
+  createOnly?: boolean
+  default?: string | number | boolean
+}
+
+export interface ResourceConfig {
+  endpoint: string
+  title: string
+  titleAr: string
+  fields: FieldConfig[]
+  columns: { key: string; label: string; money?: boolean; date?: boolean }[]
+  deletable?: boolean
+  deletableRoles?: string[]
+}
+
+const leadStatus = ['NEW', 'CONTACTED', 'QUALIFIED', 'VIEWING', 'NEGOTIATION', 'WON', 'LOST']
+const propertyTypes = ['HOUSE', 'APARTMENT', 'CONDO', 'TOWNHOUSE', 'VILLA', 'LAND', 'COMMERCIAL']
+const appointmentTypes = ['VIEWING', 'MEETING', 'CALL']
+export const appointmentStatus = ['SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']
+const dealTypes = ['SALE', 'RENT']
+export const dealStatus = ['DRAFT', 'PENDING', 'ACTIVE', 'COMPLETED', 'CANCELLED']
+export const initialDealStatuses = ['DRAFT', 'PENDING', 'ACTIVE']
+
+/** Mirrors the API's forward-only deal lifecycle. */
+export const dealTransitions: Record<string, string[]> = {
+  DRAFT: ['PENDING', 'ACTIVE', 'CANCELLED'],
+  PENDING: ['ACTIVE', 'CANCELLED'],
+  ACTIVE: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: []
+}
+const paymentStatus = ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED']
+const expenseStatus = ['PENDING', 'PAID', 'CANCELLED']
+const commissionStatus = ['PENDING', 'APPROVED', 'PAID', 'CANCELLED']
+const maintenanceStatus = ['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
+const maintenancePriority = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
+const roles = ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT']
+
+export const resources: Record<string, ResourceConfig> = {
+  leads: {
+    endpoint: '/leads',
+    title: 'Leads',
+    titleAr: 'العملاء المحتملون',
+    fields: [
+      { key: 'firstName', label: 'First name', type: 'text', required: true },
+      { key: 'lastName', label: 'Last name', type: 'text' },
+      { key: 'email', label: 'Email', type: 'email' },
+      { key: 'phone', label: 'Phone', type: 'text' },
+      { key: 'status', label: 'Status', type: 'select', options: leadStatus, default: 'NEW' },
+      { key: 'source', label: 'Source', type: 'text' },
+      { key: 'budgetMin', label: 'Budget min', type: 'number' },
+      { key: 'budgetMax', label: 'Budget max', type: 'number' },
+      { key: 'preferredType', label: 'Preferred property type', type: 'select', options: propertyTypes },
+      { key: 'preferredCity', label: 'Preferred city/area', type: 'text' },
+      { key: 'preferredBedrooms', label: 'Preferred bedrooms', type: 'number' },
+      { key: 'preferredAreaMin', label: 'Preferred area min', type: 'number' },
+      { key: 'preferredAreaMax', label: 'Preferred area max', type: 'number' },
+      { key: 'propertyId', label: 'Property ID', type: 'text' },
+      { key: 'assignedToId', label: 'Assigned user ID', type: 'text' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'firstName', label: 'First name' },
+      { key: 'lastName', label: 'Last name' },
+      { key: 'email', label: 'Email' },
+      { key: 'phone', label: 'Phone' },
+      { key: 'status', label: 'Status' },
+      { key: 'createdAt', label: 'Created', date: true }
+    ],
+    deletable: true
+  },
+  appointments: {
+    endpoint: '/appointments',
+    title: 'Appointments',
+    titleAr: 'المواعيد',
+    fields: [
+      { key: 'title', label: 'Title', type: 'text' },
+      { key: 'type', label: 'Type', type: 'select', options: appointmentTypes, default: 'VIEWING' },
+      { key: 'status', label: 'Status', type: 'select', options: appointmentStatus, default: 'SCHEDULED' },
+      { key: 'startsAt', label: 'Starts at', type: 'datetime-local', required: true },
+      { key: 'endsAt', label: 'Ends at', type: 'datetime-local' },
+      { key: 'propertyId', label: 'Property ID', type: 'text' },
+      { key: 'leadId', label: 'Lead ID', type: 'text' },
+      { key: 'userId', label: 'User ID', type: 'text' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'type', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'startsAt', label: 'Starts', date: true },
+      { key: 'endsAt', label: 'Ends', date: true },
+      { key: 'notes', label: 'Outcome / notes' }
+    ],
+    deletable: true
+  },
+  deals: {
+    endpoint: '/deals',
+    title: 'Deals',
+    titleAr: 'الصفقات',
+    fields: [
+      { key: 'referenceNumber', label: 'Reference', type: 'text' },
+      { key: 'type', label: 'Type', type: 'select', options: dealTypes, default: 'SALE' },
+      { key: 'status', label: 'Status', type: 'select', options: dealStatus, default: 'DRAFT' },
+      { key: 'propertyId', label: 'Property ID', type: 'text', required: true },
+      { key: 'leadId', label: 'Lead ID', type: 'text' },
+      { key: 'userId', label: 'User ID', type: 'text', required: true },
+      { key: 'amount', label: 'Amount', type: 'number', required: true },
+      { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
+      { key: 'exchangeRate', label: 'Historical exchange rate', type: 'number' },
+      { key: 'startedAt', label: 'Started at', type: 'date' },
+      { key: 'dueAt', label: 'Due at', type: 'date' },
+      { key: 'closedAt', label: 'Closed at', type: 'date' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'referenceNumber', label: 'Reference' },
+      { key: 'type', label: 'Type' },
+      { key: 'status', label: 'Status' },
+      { key: 'amount', label: 'Amount', money: true },
+      { key: 'dueAt', label: 'Due', date: true },
+      { key: 'closedAt', label: 'Closed', date: true }
+    ],
+    deletable: true,
+    deletableRoles: ['ADMIN', 'MANAGER']
+  },
+  payments: {
+    endpoint: '/finance/payments',
+    title: 'Payments',
+    titleAr: 'المدفوعات',
+    fields: [
+      { key: 'dealId', label: 'Deal ID', type: 'text', required: true },
+      { key: 'amount', label: 'Amount', type: 'number', required: true },
+      { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
+      { key: 'exchangeRate', label: 'Historical exchange rate', type: 'number' },
+      { key: 'status', label: 'Status', type: 'select', options: paymentStatus, default: 'PENDING' },
+      { key: 'method', label: 'Method', type: 'text' },
+      { key: 'reference', label: 'Reference', type: 'text' },
+      { key: 'idempotencyKey', label: 'Idempotency key', type: 'text' },
+      { key: 'paidAt', label: 'Paid at', type: 'date' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'dealId', label: 'Deal ID' },
+      { key: 'amount', label: 'Amount', money: true },
+      { key: 'baseAmount', label: 'Base amount', money: true },
+      { key: 'status', label: 'Status' },
+      { key: 'method', label: 'Method' },
+      { key: 'paidAt', label: 'Paid', date: true }
+    ],
+    deletable: false
+  },
+  expenses: {
+    endpoint: '/finance/expenses',
+    title: 'Expenses',
+    titleAr: 'المصروفات',
+    fields: [
+      { key: 'category', label: 'Category', type: 'text', required: true },
+      { key: 'description', label: 'Description', type: 'text' },
+      { key: 'amount', label: 'Amount', type: 'number', required: true },
+      { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
+      { key: 'exchangeRate', label: 'Historical exchange rate', type: 'number' },
+      { key: 'status', label: 'Status', type: 'select', options: expenseStatus, default: 'PENDING' },
+      { key: 'spentAt', label: 'Spent at', type: 'date' },
+      { key: 'propertyId', label: 'Property ID', type: 'text' },
+      { key: 'dealId', label: 'Deal ID', type: 'text' }
+    ],
+    columns: [
+      { key: 'category', label: 'Category' },
+      { key: 'description', label: 'Description' },
+      { key: 'amount', label: 'Amount', money: true },
+      { key: 'baseAmount', label: 'Base amount', money: true },
+      { key: 'status', label: 'Status' },
+      { key: 'spentAt', label: 'Spent', date: true }
+    ],
+    deletable: true
+  },
+  commissions: {
+    endpoint: '/finance/commissions',
+    title: 'Commissions',
+    titleAr: 'العمولات',
+    fields: [
+      { key: 'dealId', label: 'Deal ID', type: 'text', required: true },
+      { key: 'userId', label: 'User ID', type: 'text' },
+      { key: 'amount', label: 'Amount', type: 'number' },
+      { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
+      { key: 'rate', label: 'Rate', type: 'number' },
+      { key: 'status', label: 'Status', type: 'select', options: commissionStatus, default: 'PENDING' },
+      { key: 'paymentReference', label: 'Payment reference', type: 'text' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'dealId', label: 'Deal ID' },
+      { key: 'userId', label: 'User ID' },
+      { key: 'amount', label: 'Amount', money: true },
+      { key: 'rate', label: 'Rate' },
+      { key: 'status', label: 'Status' }
+    ],
+    deletable: true
+  },
+  maintenance: {
+    endpoint: '/maintenance',
+    title: 'Maintenance',
+    titleAr: 'الصيانة',
+    fields: [
+      { key: 'title', label: 'Title', type: 'text', required: true },
+      { key: 'propertyId', label: 'Property ID', type: 'text', required: true },
+      { key: 'description', label: 'Description', type: 'textarea' },
+      { key: 'priority', label: 'Priority', type: 'select', options: maintenancePriority, default: 'MEDIUM' },
+      { key: 'status', label: 'Status', type: 'select', options: maintenanceStatus, default: 'OPEN' },
+      { key: 'assignedToId', label: 'Assigned user ID', type: 'text' },
+      { key: 'cost', label: 'Cost', type: 'number' },
+      { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
+      { key: 'dueAt', label: 'Due at', type: 'date' },
+      { key: 'notes', label: 'Notes', type: 'textarea' }
+    ],
+    columns: [
+      { key: 'title', label: 'Title' },
+      { key: 'property', label: 'Property' },
+      { key: 'priority', label: 'Priority' },
+      { key: 'status', label: 'Status' },
+      { key: 'cost', label: 'Cost', money: true },
+      { key: 'dueAt', label: 'Due', date: true }
+    ],
+    deletable: true,
+    deletableRoles: ['ADMIN', 'MANAGER']
+  },
+  users: {
+    endpoint: '/users',
+    title: 'Users',
+    titleAr: 'المستخدمون',
+    fields: [
+      { key: 'email', label: 'Email', type: 'email', required: true },
+      { key: 'password', label: 'Password', type: 'password', required: true, createOnly: true },
+      { key: 'firstName', label: 'First name', type: 'text' },
+      { key: 'role', label: 'Role', type: 'select', options: roles, default: 'AGENT' },
+      { key: 'isActive', label: 'Active', type: 'checkbox', default: true }
+    ],
+    columns: [
+      { key: 'email', label: 'Email' },
+      { key: 'firstName', label: 'First name' },
+      { key: 'role', label: 'Role' },
+      { key: 'isActive', label: 'Active' },
+      { key: 'lastLoginAt', label: 'Last login', date: true }
+    ],
+    deletable: false
+  }
+}
