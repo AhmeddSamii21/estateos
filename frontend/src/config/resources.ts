@@ -62,7 +62,9 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'preferredAreaMax', label: 'Preferred area max', type: 'number' },
       { key: 'propertyId', label: 'Property ID', type: 'text' },
       { key: 'assignedToId', label: 'Assigned user ID', type: 'text' },
-      { key: 'notes', label: 'Notes', type: 'textarea' }
+      { key: 'notes', label: 'Notes', type: 'textarea' },
+      { key: 'lastContactedAt', label: 'Last contacted', type: 'datetime-local' },
+      { key: 'nextFollowUpAt', label: 'Next follow-up', type: 'datetime-local' }
     ],
     columns: [
       { key: 'firstName', label: 'First name' },
@@ -70,6 +72,8 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'email', label: 'Email' },
       { key: 'phone', label: 'Phone' },
       { key: 'status', label: 'Status' },
+      { key: 'lastContactedAt', label: 'Last contacted', date: true },
+      { key: 'nextFollowUpAt', label: 'Next follow-up', date: true },
       { key: 'createdAt', label: 'Created', date: true }
     ],
     deletable: true
@@ -116,6 +120,9 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'startedAt', label: 'Started at', type: 'date' },
       { key: 'dueAt', label: 'Due at', type: 'date' },
       { key: 'closedAt', label: 'Closed at', type: 'date' },
+      { key: 'leaseStartAt', label: 'Lease start', type: 'date' },
+      { key: 'leaseEndAt', label: 'Lease end', type: 'date' },
+      { key: 'renewalNoticeDays', label: 'Renewal notice (days)', type: 'number', default: 30 },
       { key: 'notes', label: 'Notes', type: 'textarea' }
     ],
     columns: [
@@ -124,6 +131,7 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'status', label: 'Status' },
       { key: 'amount', label: 'Amount', money: true },
       { key: 'dueAt', label: 'Due', date: true },
+      { key: 'leaseEndAt', label: 'Lease ends', date: true },
       { key: 'closedAt', label: 'Closed', date: true }
     ],
     deletable: true,

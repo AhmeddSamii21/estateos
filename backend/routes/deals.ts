@@ -4,12 +4,26 @@ import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { leadScope, MANAGEMENT_ROLES, organizationIdOf, userIdOf } from '../utils/scope'
-import { dateValue, enumValue, optionalString, pagination, requiredString } from '../utils/validation'
+import { dateValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { convertToBase, parseMoney } from '../utils/money'
 import { logAudit, logPropertyActivity } from '../utils/audit'
 import { assertDealTransition, assertInitialDealStatus } from '../utils/dealStatus'
 import { listEntityActivity } from '../services/activity'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { nullableDateValue } from '../utils/followUps'
+import {
+  assertValidLease,
+  daysUntilLeaseEnd,
+  isLeaseRenewalDue,
+  leaseRenewalState,
+  DEFAULT_RENEWAL_NOTICE_DAYS,
+  MAX_RENEWAL_NOTICE_DAYS
+} from '../utils/leases'
+
+function leaseNoticeValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  return numberValue(value, 'renewalNoticeDays', { min: 0, max: MAX_RENEWAL_NOTICE_DAYS })
+}
 
 const router = Router()
 router.use(authMiddleware)
@@ -105,6 +119,52 @@ router.get('/', async (req, res, next) => {
   }
 })
 
+// Rental renewals due inside each deal's own notice window (plus expired
+// leases). Uses the same state helper as the reminder service so the dashboard
+// and notifications never disagree.
+router.get('/lease-renewals', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const where: Prisma.DealWhereInput = {
+      organizationId,
+      deletedAt: null,
+      isActive: true,
+      type: DealType.RENT,
+      status: { in: [DealStatus.PENDING, DealStatus.ACTIVE] },
+      leaseEndAt: { not: null }
+    }
+    if (!canViewAllDeals(req.user?.role)) where.userId = userIdOf(req)
+
+    const now = new Date()
+    const deals = await prisma.deal.findMany({
+      where,
+      take: 500,
+      orderBy: { leaseEndAt: 'asc' },
+      select: {
+        id: true,
+        referenceNumber: true,
+        leaseEndAt: true,
+        renewalNoticeDays: true,
+        property: { select: { id: true, title: true, city: true } }
+      }
+    })
+    const data = deals
+      .filter((deal) => isLeaseRenewalDue(deal, now))
+      .map((deal) => ({
+        id: deal.id,
+        referenceNumber: deal.referenceNumber,
+        leaseEndAt: deal.leaseEndAt,
+        noticeDays: deal.renewalNoticeDays ?? DEFAULT_RENEWAL_NOTICE_DAYS,
+        daysUntil: daysUntilLeaseEnd(deal.leaseEndAt!, now),
+        state: leaseRenewalState(deal, now),
+        property: deal.property
+      }))
+    res.json({ success: true, data })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
@@ -164,6 +224,10 @@ router.post('/', async (req, res, next) => {
     const conversion = convertToBase(amount, currency, await baseCurrencyOf(organizationId), req.body?.exchangeRate)
     const status = enumValue(req.body?.status, 'status', Object.values(DealStatus), DealStatus.DRAFT)
     assertInitialDealStatus(status)
+    const leaseStartAt = nullableDateValue(req.body?.leaseStartAt, 'leaseStartAt')
+    const leaseEndAt = nullableDateValue(req.body?.leaseEndAt, 'leaseEndAt')
+    const renewalNoticeDays = leaseNoticeValue(req.body?.renewalNoticeDays)
+    assertValidLease({ leaseStartAt, leaseEndAt, renewalNoticeDays })
     if (req.user?.role === 'AGENT' && responsibleId !== userId) {
       throw createError('Agents can only create deals assigned to themselves', 403)
     }
@@ -187,6 +251,9 @@ router.post('/', async (req, res, next) => {
           // Only a completed deal may carry a close date; creation can never
           // jump directly to a terminal stage.
           closedAt: null,
+          leaseStartAt,
+          leaseEndAt,
+          ...(renewalNoticeDays !== undefined ? { renewalNoticeDays } : {}),
           notes: optionalString(req.body?.notes, 'notes', 5000)
         }
       })
@@ -245,6 +312,16 @@ router.patch('/:id', async (req, res, next) => {
     if (body.closedAt !== undefined && nextStatus !== DealStatus.COMPLETED) {
       throw createError('closedAt can only be set when completing a deal', 400)
     }
+    const leaseStartAt = body.leaseStartAt === undefined
+      ? existing.leaseStartAt
+      : nullableDateValue(body.leaseStartAt, 'leaseStartAt')
+    const leaseEndAt = body.leaseEndAt === undefined
+      ? existing.leaseEndAt
+      : nullableDateValue(body.leaseEndAt, 'leaseEndAt')
+    const renewalNoticeDays = body.renewalNoticeDays === undefined
+      ? existing.renewalNoticeDays
+      : (leaseNoticeValue(body.renewalNoticeDays) ?? DEFAULT_RENEWAL_NOTICE_DAYS)
+    assertValidLease({ leaseStartAt, leaseEndAt, renewalNoticeDays })
 
     const data: Prisma.DealUpdateInput = {}
     if (body.status !== undefined) data.status = nextStatus
@@ -253,6 +330,9 @@ router.patch('/:id', async (req, res, next) => {
     if (body.startedAt !== undefined) data.startedAt = dateValue(body.startedAt, 'startedAt')
     if (body.dueAt !== undefined) data.dueAt = dateValue(body.dueAt, 'dueAt')
     if (body.closedAt !== undefined) data.closedAt = dateValue(body.closedAt, 'closedAt')
+    if (body.leaseStartAt !== undefined) data.leaseStartAt = leaseStartAt
+    if (body.leaseEndAt !== undefined) data.leaseEndAt = leaseEndAt
+    if (body.renewalNoticeDays !== undefined) data.renewalNoticeDays = renewalNoticeDays
     if (nextStatus === DealStatus.COMPLETED && !existing.closedAt) data.closedAt = new Date()
 
     let amount = existing.amount.toString()

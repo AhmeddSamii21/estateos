@@ -3,12 +3,13 @@ import {
   CommissionStatus,
   ExpenseStatus,
   PaymentStatus,
-  Prisma
+  Prisma,
+  Role
 } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
-import { FINANCE_ROLES, MANAGEMENT_ROLES, organizationIdOf, requireAnyRole, userIdOf } from '../utils/scope'
+import { FINANCE_ROLES, MANAGEMENT_ROLES, organizationIdOf, requireAnyRole, roleOf, userIdOf } from '../utils/scope'
 import {
   booleanValue,
   dateValue,
@@ -21,9 +22,74 @@ import {
 import { commissionAmount, convertToBase, parseMoney, parseRate, receivedAmount } from '../utils/money'
 import { logAudit } from '../utils/audit'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
-import { baseCurrencyOf, listExchangeRatesForOrg, resolveCurrency, upsertCurrencyRecord } from '../utils/fx'
+import { baseCurrencyOf, listExchangeRatesForOrg, resolveCurrency, summarizeCurrencyAmounts, upsertCurrencyRecord } from '../utils/fx'
+import {
+  buildCommissionStatement,
+  commissionStatementScope,
+  type StatementCommissionRow
+} from '../utils/commissionStatements'
 
 const router = Router()
+
+// Agents may read their own statement, so this route is registered before the
+// finance-only guard that protects the rest of the router.
+router.get('/commission-statements', authMiddleware, async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const role = roleOf(req)
+    if (!role || (role !== Role.AGENT && !FINANCE_ROLES.includes(role))) {
+      throw createError('Insufficient permissions', 403)
+    }
+    const agentId = optionalString(req.query.agentId, 'agentId', 100)
+    const where = commissionStatementScope(role, userIdOf(req), organizationId, agentId)
+    if (req.query.from || req.query.to) {
+      where.createdAt = {
+        ...(req.query.from ? { gte: dateValue(req.query.from, 'from', true)! } : {}),
+        ...(req.query.to ? { lte: dateValue(req.query.to, 'to', true)! } : {})
+      }
+    }
+
+    const rows = await prisma.commission.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        amount: true,
+        baseAmount: true,
+        currency: true,
+        status: true,
+        userId: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, firstName: true } },
+        deal: {
+          select: {
+            id: true,
+            referenceNumber: true,
+            userId: true,
+            user: { select: { id: true, email: true, firstName: true } }
+          }
+        }
+      }
+    }) as StatementCommissionRow[]
+
+    const statement = buildCommissionStatement(rows)
+    const consolidated = booleanValue(req.query.consolidated, 'consolidated', true)
+    const fx = consolidated ? await summarizeCurrencyAmounts(organizationId, statement.fxRows) : null
+    res.json({
+      success: true,
+      data: {
+        ...statement,
+        fx,
+        scope: role === Role.AGENT ? 'AGENT' : 'ALL',
+        agentId: role === Role.AGENT ? userIdOf(req) : (agentId || null),
+        commissionCount: rows.length
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.use(authMiddleware, requireRole(FINANCE_ROLES))
 
 // baseCurrencyOf is shared with the settings FX endpoints via utils/fx so the

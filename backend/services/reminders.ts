@@ -1,6 +1,9 @@
-﻿import { AppointmentStatus, PaymentStatus } from '@prisma/client'
+﻿import { AppointmentStatus, DealStatus, DealType, LeadStatus, PaymentStatus } from '@prisma/client'
 import { prisma } from '../prisma'
 import { createNotifications, organizationRecipientIds, type NotificationInput } from './notifications'
+import { leadScope } from '../utils/scope'
+import { followUpBucket, startOfUtcDay } from '../utils/followUps'
+import { daysUntilLeaseEnd, isLeaseRenewalDue, leaseRenewalState, MAX_RENEWAL_NOTICE_DAYS } from '../utils/leases'
 
 const DEFAULT_DUE_SOON_HOURS = 48
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000
@@ -13,10 +16,16 @@ export function isOverdue(dueAt: Date, now: Date): boolean {
   return dueAt.getTime() < new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).getTime()
 }
 
+function leadLabel(lead: { firstName: string; lastName?: string | null }): string {
+  return `${lead.firstName}${lead.lastName ? ` ${lead.lastName}` : ''}`
+}
+
 export interface ReminderRunResult {
   organizations: number
   paymentReminders: number
   appointmentReminders: number
+  leadFollowUpReminders: number
+  leaseRenewalReminders: number
 }
 
 export interface ReminderRunOptions {
@@ -54,7 +63,15 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
   const dueSoonMs = (Number.isFinite(dueSoonHours) && dueSoonHours > 0 ? dueSoonHours : DEFAULT_DUE_SOON_HOURS) * 60 * 60 * 1000
   const dueSoonCutoff = new Date(now.getTime() + dueSoonMs)
   const todayKey = toDayKey(now)
-  const result: ReminderRunResult = { organizations: 0, paymentReminders: 0, appointmentReminders: 0 }
+  const endOfToday = new Date(startOfUtcDay(now).getTime() + 24 * 60 * 60 * 1000)
+  const maxLeaseWindow = new Date(now.getTime() + MAX_RENEWAL_NOTICE_DAYS * 24 * 60 * 60 * 1000)
+  const result: ReminderRunResult = {
+    organizations: 0,
+    paymentReminders: 0,
+    appointmentReminders: 0,
+    leadFollowUpReminders: 0,
+    leaseRenewalReminders: 0
+  }
 
   const organizations = await prisma.organization.findMany({
     where: {
@@ -154,6 +171,100 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
       }], todayKey)
       result.appointmentReminders += created
     }
+
+    // 3) Lead follow-ups due today or overdue. Open leads only; a won/lost
+    // lead is no longer awaiting contact.
+    const leads = await prisma.lead.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        status: { notIn: [LeadStatus.WON, LeadStatus.LOST] },
+        nextFollowUpAt: { not: null, lt: endOfToday },
+        ...leadScope(org.id)
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        assignedToId: true,
+        nextFollowUpAt: true
+      },
+      take: 500
+    })
+
+    for (const lead of leads) {
+      if (!lead.nextFollowUpAt) continue
+      const bucket = followUpBucket(lead.nextFollowUpAt, now)
+      if (bucket !== 'overdue' && bucket !== 'today') continue
+      const recipients = await organizationRecipientIds(prisma, org.id, {
+        roles: ['ADMIN', 'MANAGER'],
+        includeUserIds: [lead.assignedToId || '']
+      })
+      if (!recipients.length) continue
+      const overdue = bucket === 'overdue'
+      const dueDate = toDayKey(lead.nextFollowUpAt)
+      const created = await createDailyReminders(recipients.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: overdue ? 'LEAD_FOLLOW_UP_OVERDUE_REMINDER' : 'LEAD_FOLLOW_UP_DUE_REMINDER',
+        title: overdue ? 'Lead follow-up overdue' : 'Lead follow-up due today',
+        message: `${leadLabel(lead)} needs a follow-up (${dueDate}${overdue ? ', overdue' : ''}).`,
+        entityType: 'Lead',
+        entityId: lead.id,
+        actionUrl: `/leads?followUp=${bucket}`,
+        metadata: { reminderDay: todayKey, kind: bucket, dueDate }
+      })), todayKey)
+      result.leadFollowUpReminders += created
+    }
+
+    // 4) Rental leases expiring within their own notice window (or already
+    // expired). Recipients are the responsible agent and local managers.
+    const leases = await prisma.deal.findMany({
+      where: {
+        organizationId: org.id,
+        deletedAt: null,
+        isActive: true,
+        type: DealType.RENT,
+        status: { in: [DealStatus.PENDING, DealStatus.ACTIVE] },
+        leaseEndAt: { not: null, lte: maxLeaseWindow }
+      },
+      select: {
+        id: true,
+        referenceNumber: true,
+        userId: true,
+        type: true,
+        leaseEndAt: true,
+        renewalNoticeDays: true,
+        property: { select: { title: true } }
+      },
+      take: 500
+    })
+
+    for (const lease of leases) {
+      if (!lease.leaseEndAt || !isLeaseRenewalDue(lease, now)) continue
+      const recipients = await organizationRecipientIds(prisma, org.id, {
+        roles: ['ADMIN', 'MANAGER'],
+        includeUserIds: [lease.userId]
+      })
+      if (!recipients.length) continue
+      const state = leaseRenewalState(lease, now)
+      const expired = state === 'expired'
+      const days = daysUntilLeaseEnd(lease.leaseEndAt, now)
+      const dueDate = toDayKey(lease.leaseEndAt)
+      const reference = lease.referenceNumber || lease.property?.title || 'a lease'
+      const created = await createDailyReminders(recipients.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: expired ? 'LEASE_EXPIRED_REMINDER' : 'LEASE_RENEWAL_REMINDER',
+        title: expired ? 'Lease expired' : 'Lease renewal due',
+        message: `${reference} ${expired ? `expired on ${dueDate}` : `expires on ${dueDate} (${days} day${days === 1 ? '' : 's'} left)`}.`,
+        entityType: 'Deal',
+        entityId: lease.id,
+        actionUrl: `/deals/${lease.id}`,
+        metadata: { reminderDay: todayKey, kind: state, daysUntil: days, leaseEnd: dueDate }
+      })), todayKey)
+      result.leaseRenewalReminders += created
+    }
   }
 
   return result
@@ -169,7 +280,7 @@ async function runSafely(label: string) {
   try {
     const res = await runReminders(new Date())
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders}`)
+      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders}`)
     }
   } catch (err) {
     console.error(`[reminders] ${label} failed`, err)

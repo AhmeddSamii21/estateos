@@ -145,9 +145,22 @@ export interface Lead {
   preferredAreaMax?: MoneyValue | null
   assignedToId?: string | null
   propertyId?: string | null
+  nextFollowUpAt?: string | null
+  lastContactedAt?: string | null
+  followUpNotes?: LeadNote[]
   isActive: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface LeadNote {
+  id: string
+  leadId: string
+  authorId?: string | null
+  body: string
+  nextFollowUpAt?: string | null
+  createdAt: string
+  author?: { id: string; firstName?: string | null; email?: string } | null
 }
 
 export interface LeadMatch {
@@ -201,6 +214,9 @@ export interface Deal {
   startedAt?: string | null
   dueAt?: string | null
   closedAt?: string | null
+  leaseStartAt?: string | null
+  leaseEndAt?: string | null
+  renewalNoticeDays?: number | null
   notes?: string | null
   createdAt: string
   updatedAt: string

@@ -243,6 +243,7 @@ model User {
   leads           Lead[]
   appointments    Appointment[]
   deals           Deal[]
+  leadNotes       LeadNote[]
   notifications   Notification[]
   auditLogs       AuditLog[]
   uploadedDocuments Document[]      @relation("DocumentUploader")
@@ -424,6 +425,9 @@ model Lead {
   preferredAreaMax  Decimal?      @db.Decimal(12, 2)
   assignedToId      String?
   propertyId        String?
+  // Follow-up tracking: next scheduled touchpoint and most recent contact.
+  nextFollowUpAt    DateTime?
+  lastContactedAt   DateTime?
   isActive          Boolean       @default(true)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -434,10 +438,30 @@ model Lead {
   appointments   Appointment[]
   documents      Document[]
   deals          Deal[]
+  followUpNotes  LeadNote[]
 
   @@index([assignedToId])
   @@index([propertyId])
   @@index([status])
+  @@index([nextFollowUpAt])
+}
+
+// Lightweight interaction log for calls and quick follow-up notes. The legacy
+// free-text Lead.notes stays untouched so existing integrations keep working.
+model LeadNote {
+  id             String    @id @default(uuid())
+  leadId         String
+  authorId       String?
+  body           String
+  nextFollowUpAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lead    Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  author  User? @relation(fields: [authorId], references: [id])
+
+  @@index([leadId, createdAt])
+  @@index([authorId])
 }
 
 model Appointment {
@@ -479,6 +503,10 @@ model Deal {
   startedAt      DateTime?
   dueAt          DateTime?
   closedAt       DateTime?
+  // Rental-only lease window and the notice period used for renewal alerts.
+  leaseStartAt   DateTime?
+  leaseEndAt     DateTime?
+  renewalNoticeDays Int   @default(30)
   notes          String?
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())
@@ -498,6 +526,7 @@ model Deal {
   @@index([userId])
   @@index([propertyId])
   @@index([status])
+  @@index([type, leaseEndAt])
 }
 
 model Payment {

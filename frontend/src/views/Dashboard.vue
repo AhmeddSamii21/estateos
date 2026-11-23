@@ -39,6 +39,21 @@
         </small>
       </div>
 
+      <section v-if="leaseRenewals.length" class="panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'تجديدات الإيجار' : 'Lease renewals' }}</h2>
+          <router-link to="/deals">{{ store.isArabic ? 'عرض الصفقات' : 'View deals' }} →</router-link>
+        </div>
+        <div class="rows">
+          <router-link v-for="lease in leaseRenewals" :key="lease.id" class="row lease-row" :to="`/deals/${lease.id}`">
+            <span class="ref">{{ lease.referenceNumber || lease.id }}</span>
+            <span class="title">{{ lease.property?.title || '—' }}</span>
+            <span class="lease-pill" :class="`lease-${lease.state}`">{{ leaseStateLabel(lease.state) }}</span>
+            <strong :class="{ 'days-expired': lease.daysUntil < 0 }">{{ leaseDaysLabel(lease.daysUntil) }}</strong>
+          </router-link>
+        </div>
+      </section>
+
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'أحدث العقارات' : 'Latest properties' }}</h2>
@@ -70,7 +85,18 @@
 import { computed, onMounted, ref } from 'vue'
 import { apiGet } from '@/api/client'
 import { useStore } from '@/stores'
+import type { LeaseRenewalState } from '@/utils/leases'
 import type { ExchangeRateOverview, Property } from '@/types'
+
+interface LeaseRenewal {
+  id: string
+  referenceNumber?: string | null
+  leaseEndAt: string
+  noticeDays: number
+  daysUntil: number
+  state: LeaseRenewalState
+  property?: { id: string; title?: string | null; city?: string | null } | null
+}
 
 interface CurrencyTotal {
   currency: string
@@ -80,9 +106,15 @@ interface CurrencyTotal {
 
 const store = useStore()
 const fxOverview = ref<ExchangeRateOverview | null>(null)
+const leaseRenewals = ref<LeaseRenewal[]>([])
 
 onMounted(async () => {
   if (!store.allProperties.length) void store.fetchProperties({ limit: 100 })
+  try {
+    leaseRenewals.value = (await apiGet<LeaseRenewal[]>('/deals/lease-renewals')).data || []
+  } catch {
+    leaseRenewals.value = []
+  }
   // FX totals are optional: the endpoint is finance-only, so agents keep the
   // existing per-currency breakdowns without a failed request.
   if (['ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(store.user?.role || '')) {
@@ -138,6 +170,20 @@ const baseTotals = computed(() => {
     missing: Array.from(missing).sort()
   }
 })
+
+function leaseStateLabel(state: LeaseRenewalState): string {
+  const labels: Record<LeaseRenewalState, [string, string]> = {
+    expired: ['Expired', 'منتهي'],
+    due: ['Renewal due', 'تجديد مستحق'],
+    upcoming: ['Upcoming', 'قادم']
+  }
+  return store.isArabic ? labels[state][1] : labels[state][0]
+}
+
+function leaseDaysLabel(days: number): string {
+  if (days < 0) return store.isArabic ? `منتهي منذ ${Math.abs(days)} يوم` : `${Math.abs(days)}d overdue`
+  return store.isArabic ? `${days} يوم` : `${days}d left`
+}
 
 function compact(amount: number): string {
   return new Intl.NumberFormat(store.isArabic ? 'ar-SA' : 'en-US', {
@@ -207,7 +253,10 @@ h2 { margin: 0; font-size: 1.05rem; }
 .row:hover { background: #f9fafb; }
 .ref { color: #6b7280; font-size: 0.78rem; }
 .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tag { font-size: 0.72rem; background: #eef2ff; color: #4338ca; padding: 0.2rem 0.5rem; border-radius: 999px; }
+.tag, .lease-pill { font-size: 0.72rem; background: #eef2ff; color: #4338ca; padding: 0.2rem 0.5rem; border-radius: 999px; }
+.lease-expired { background: #fee2e2; color: #991b1b; }
+.lease-due { background: #fef3c7; color: #92400e; }
+.days-expired { color: #991b1b; }
 .state { padding: 2rem; text-align: center; color: #6b7280; font-size: 0.9rem; }
 .shortcuts { display: flex; gap: 0.8rem; flex-wrap: wrap; }
 .shortcuts a { display: inline-flex; align-items: center; gap: 0.5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0.8rem 1rem; color: #374151; text-decoration: none; font-size: 0.86rem; }

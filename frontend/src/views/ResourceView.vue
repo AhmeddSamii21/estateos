@@ -21,6 +21,15 @@
             <option v-for="status in dealStatus" :key="status" :value="status">{{ readableStatus(status) }}</option>
           </select>
         </label>
+        <label v-if="isLeads" class="stage-filter">
+          <span>{{ store.isArabic ? 'المتابعة' : 'Follow-up' }}</span>
+          <select v-model="followUpFilter">
+            <option value="">{{ store.isArabic ? 'الكل' : 'All' }}</option>
+            <option value="overdue">{{ store.isArabic ? 'متأخرة' : 'Overdue' }}</option>
+            <option value="today">{{ store.isArabic ? 'اليوم' : 'Today' }}</option>
+            <option value="upcoming">{{ store.isArabic ? 'قادمة' : 'Upcoming' }}</option>
+          </select>
+        </label>
         <button class="btn btn-quiet" type="button" :disabled="exporting" @click="onExport">
           <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
         </button>
@@ -86,6 +95,17 @@
                     {{ display(row[column.key], column, row) }}
                   </router-link>
                 </template>
+                <template v-else-if="isLeads && column.key === 'nextFollowUpAt' && row[column.key]">
+                  <span class="follow-up-pill" :class="followUpClass(row[column.key])">
+                    {{ display(row[column.key], column, row) }}
+                    <small v-if="followUpBucketOf(row[column.key]) === 'overdue'">
+                      {{ store.isArabic ? 'متأخرة' : 'overdue' }}
+                    </small>
+                    <small v-else-if="followUpBucketOf(row[column.key]) === 'today'">
+                      {{ store.isArabic ? 'اليوم' : 'today' }}
+                    </small>
+                  </span>
+                </template>
                 <template v-else>{{ display(row[column.key], column, row) }}</template>
               </td>
               <td class="actions-col">
@@ -106,6 +126,9 @@
                 </button>
                 <button v-if="props.resource === 'leads'" type="button" class="link" @click="openActivity(row)">
                   {{ store.isArabic ? '??????' : 'Activity' }}
+                </button>
+                <button v-if="isLeads" type="button" class="link" @click="openFollowUp(row)">
+                  {{ store.isArabic ? 'متابعة' : 'Follow up' }}
                 </button>
                 <button type="button" class="link" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
                 <button v-if="canDelete" type="button" class="link danger" @click="onDelete(row)">
@@ -173,6 +196,40 @@
         </div>
       </section>
     </div>
+
+    <div v-if="followUpOpen && followUpLead" class="overlay" @click.self="followUpOpen = false">
+      <form class="modal" @submit.prevent="onSaveFollowUp">
+        <div class="modal-head">
+          <h2>{{ store.isArabic ? 'تسجيل متابعة' : 'Log follow-up' }}</h2>
+          <button type="button" aria-label="Close" @click="followUpOpen = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="follow-up-lead">{{ leadLabel(followUpLead) }}</p>
+          <label>
+            <span>{{ store.isArabic ? 'الملاحظة' : 'Note' }} *</span>
+            <textarea v-model="followUpBody" rows="4" required maxlength="2000"></textarea>
+          </label>
+          <label>
+            <span>{{ store.isArabic ? 'المتابعة القادمة (اختياري)' : 'Next follow-up (optional)' }}</span>
+            <input v-model="followUpNext" type="datetime-local" />
+          </label>
+          <p class="muted">
+            {{ store.isArabic
+              ? 'سيتم تسجيل وقت آخر تواصل تلقائياً.'
+              : 'Last contacted is stamped automatically.' }}
+          </p>
+          <div v-if="followUpError" class="error" role="alert">{{ followUpError }}</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" type="submit" :disabled="followUpSaving">
+            {{ followUpSaving ? '…' : (store.isArabic ? 'حفظ' : 'Save') }}
+          </button>
+          <button class="btn btn-quiet" type="button" @click="followUpOpen = false">
+            {{ store.isArabic ? 'إلغاء' : 'Cancel' }}
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -190,6 +247,7 @@ import {
   type ResourceConfig
 } from '@/config/resources'
 import { downloadCsv, type CsvRow } from '@/utils/csv'
+import { followUpBucket, type FollowUpBucket } from '@/utils/followUps'
 import { useStore } from '@/stores'
 import type { ApiWarning, AppointmentConflictInfo } from '@/types'
 
@@ -199,6 +257,7 @@ const store = useStore()
 const config = computed<ResourceConfig>(() => resources[props.resource] || resources.leads)
 const isAppointments = computed(() => props.resource === 'appointments')
 const isDeals = computed(() => props.resource === 'deals')
+const isLeads = computed(() => props.resource === 'leads')
 
 type Row = Record<string, unknown> & { id: string }
 const rows = ref<Row[]>([])
@@ -219,6 +278,13 @@ const conflictWarning = ref<ApiWarning | null>(null)
 const statusSaving = ref<string | null>(null)
 const exporting = ref(false)
 const statusFilter = ref('')
+const followUpFilter = ref('')
+const followUpOpen = ref(false)
+const followUpLead = ref<Row | null>(null)
+const followUpBody = ref('')
+const followUpNext = ref('')
+const followUpSaving = ref(false)
+const followUpError = ref('')
 
 const visibleFields = computed<FieldConfig[]>(() =>
   config.value.fields
@@ -264,6 +330,7 @@ const canDelete = computed(() => {
 
 watch(config, () => { void load() })
 watch(statusFilter, () => { void load() })
+watch(followUpFilter, () => { void load() })
 
 onMounted(() => { void load(); applyQueryPrefill() })
 
@@ -272,6 +339,7 @@ async function load(): Promise<void> {
   try {
     const params: Record<string, string | number> = { limit: 100 }
     if (isDeals.value && statusFilter.value) params.status = statusFilter.value
+    if (isLeads.value && followUpFilter.value) params.followUp = followUpFilter.value
     const response = await apiGet<Row[] | { data: Row[] }>(config.value.endpoint, { params })
     const payload = response.data
     rows.value = Array.isArray(payload) ? payload : (payload?.data ?? [])
@@ -301,6 +369,9 @@ function openCreate(prefill: Record<string, unknown> = {}): void {
 
 function applyQueryPrefill(): void {
   const q = router.currentRoute.value.query
+  if (isLeads.value && typeof q.followUp === 'string' && ['overdue', 'today', 'upcoming'].includes(q.followUp)) {
+    followUpFilter.value = q.followUp
+  }
   if (props.resource === 'deals') {
     const prefill: Record<string, unknown> = {}
     if (typeof q.propertyId === 'string') prefill.propertyId = q.propertyId
@@ -340,6 +411,45 @@ function closeForm(): void {
 function openActivity(row: Row): void {
   activityId.value = String(row.id)
   activityOpen.value = true
+}
+
+function leadLabel(lead: Row): string {
+  return `${lead.firstName || ''}${lead.lastName ? ` ${lead.lastName}` : ''}`.trim() || String(lead.email || 'Lead')
+}
+
+function followUpBucketOf(value: unknown): FollowUpBucket | null {
+  return followUpBucket(value == null || value === '' ? null : String(value))
+}
+
+function followUpClass(value: unknown): string {
+  const bucket = followUpBucketOf(value)
+  return bucket ? `follow-up-${bucket}` : ''
+}
+
+function openFollowUp(row: Row): void {
+  followUpLead.value = row
+  followUpBody.value = ''
+  followUpNext.value = ''
+  followUpError.value = ''
+  followUpOpen.value = true
+}
+
+async function onSaveFollowUp(): Promise<void> {
+  if (!followUpLead.value || !followUpBody.value.trim()) return
+  followUpSaving.value = true
+  followUpError.value = ''
+  try {
+    await apiPost(`${config.value.endpoint}/${followUpLead.value.id}/follow-ups`, {
+      body: followUpBody.value.trim(),
+      nextFollowUpAt: followUpNext.value || null
+    })
+    followUpOpen.value = false
+    await load()
+  } catch (e) {
+    followUpError.value = errorMessage(e)
+  } finally {
+    followUpSaving.value = false
+  }
 }
 
 async function openMatches(row: Row): Promise<void> {
@@ -579,6 +689,11 @@ h2 { margin: 0; font-size: 1.15rem; }
 .status-active { background: #e0e7ff; color: #3730a3; }
 .status-completed { background: #dcfce7; color: #166534; }
 .status-cancelled, .status-no-show { background: #fee2e2; color: #991b1b; }
+.follow-up-pill { display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.74rem; background: #e0e7ff; color: #3730a3; white-space: nowrap; }
+.follow-up-pill small { font-size: 0.66rem; text-transform: uppercase; }
+.follow-up-overdue { background: #fee2e2; color: #991b1b; }
+.follow-up-today { background: #fef3c7; color: #92400e; }
+.follow-up-lead { margin: 0 0 0.4rem; font-weight: 600; color: #111827; }
 .stage-filter { display: inline-flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #374151; }
 .stage-filter select { padding: 0.4rem 0.5rem; font-size: 0.82rem; }
 .record-link { color: #4f46e5; font-weight: 600; text-decoration: none; }

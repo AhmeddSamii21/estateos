@@ -9,6 +9,7 @@ import { parseMoney } from '../utils/money'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
 import { logAudit } from '../utils/audit'
 import { scoreLeadPropertyMatch } from '../utils/leadMatching'
+import { followUpWhere, nullableDateValue, type FollowUpBucket } from '../utils/followUps'
 
 const router = Router()
 router.use(authMiddleware)
@@ -90,6 +91,11 @@ router.get('/', async (req, res, next) => {
     const { page, limit, skip } = pagination(req.query as Record<string, unknown>)
     const where = scope(organizationId)
     if (req.query.status) where.status = enumValue(req.query.status, 'status', Object.values(LeadStatus))
+    if (req.query.followUp) {
+      const bucket = enumValue(req.query.followUp, 'followUp', ['overdue', 'today', 'upcoming'] as const) as FollowUpBucket
+      const bucketWhere = followUpWhere(bucket)
+      where.nextFollowUpAt = bucketWhere.nextFollowUpAt
+    }
     if (req.query.search) {
       const search = String(req.query.search)
       where.AND = [
@@ -232,9 +238,88 @@ router.get('/:id/matches', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
-    const lead = await prisma.lead.findFirst({ where: { id: String(req.params.id), ...scope(organizationId) } })
+    const lead = await prisma.lead.findFirst({
+      where: { id: String(req.params.id), ...scope(organizationId) },
+      include: {
+        followUpNotes: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          include: { author: { select: { id: true, firstName: true, email: true } } }
+        }
+      }
+    })
     if (!lead) throw createError('Lead not found', 404)
     res.json({ success: true, data: lead })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Quick follow-up/call note: one write records the interaction, stamps the
+// last contact, and optionally schedules (or clears) the next follow-up.
+router.post('/:id/follow-ups', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const actorId = userIdOf(req)
+    const id = String(req.params.id)
+    const existing = await prisma.lead.findFirst({ where: { id, ...scope(organizationId) } })
+    if (!existing) throw createError('Lead not found', 404)
+
+    const body = req.body as Record<string, unknown>
+    const text = requiredString(body.body ?? body.note, 'body', 2000)
+    const nextFollowUpAt = nullableDateValue(body.nextFollowUpAt, 'nextFollowUpAt')
+    const contactedAt = new Date()
+
+    const result = await prisma.$transaction(async (tx) => {
+      const note = await tx.leadNote.create({
+        data: {
+          leadId: id,
+          authorId: actorId,
+          body: text,
+          ...(nextFollowUpAt !== undefined ? { nextFollowUpAt } : {})
+        },
+        include: { author: { select: { id: true, firstName: true, email: true } } }
+      })
+      const lead = await tx.lead.update({
+        where: { id },
+        data: {
+          lastContactedAt: contactedAt,
+          ...(nextFollowUpAt !== undefined ? { nextFollowUpAt } : {})
+        }
+      })
+      await logAudit(tx, {
+        userId: actorId,
+        action: 'LEAD_FOLLOW_UP_LOGGED',
+        entityType: 'Lead',
+        entityId: id,
+        details: { noteId: note.id, nextFollowUpAt: nextFollowUpAt ?? null }
+      })
+      return { note, lead }
+    })
+
+    const recipients = await organizationRecipientIds(prisma, organizationId, {
+      roles: ['ADMIN', 'MANAGER'],
+      includeUserIds: existing.assignedToId ? [existing.assignedToId] : [],
+      excludeUserId: actorId
+    })
+    if (recipients.length) {
+      await notifyUsers(prisma, recipients, {
+        organizationId,
+        type: 'LEAD_FOLLOW_UP_LOGGED',
+        title: 'Lead follow-up logged',
+        message: `${existing.firstName}${existing.lastName ? ` ${existing.lastName}` : ''}: ${text.slice(0, 160)}`,
+        entityType: 'Lead',
+        entityId: id,
+        actionUrl: '/leads',
+        metadata: { noteId: result.note.id, nextFollowUpAt: result.lead.nextFollowUpAt?.toISOString() || null }
+      })
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: 'Follow-up note logged successfully'
+    })
   } catch (error) {
     next(error)
   }
@@ -267,7 +352,8 @@ router.post('/', async (req, res, next) => {
           preferredAreaMin: criteria.preferredAreaMin,
           preferredAreaMax: criteria.preferredAreaMax,
           assignedToId,
-          propertyId
+          propertyId,
+          nextFollowUpAt: nullableDateValue(body.nextFollowUpAt, 'nextFollowUpAt')
         }
       })
       await logAudit(tx, {
@@ -315,6 +401,8 @@ router.patch('/:id', async (req, res, next) => {
     }
     if (body.status !== undefined) data.status = enumValue(body.status, 'status', Object.values(LeadStatus))
     if (body.isActive !== undefined) data.isActive = booleanValue(body.isActive, 'isActive')
+    if (body.nextFollowUpAt !== undefined) data.nextFollowUpAt = nullableDateValue(body.nextFollowUpAt, 'nextFollowUpAt')
+    if (body.lastContactedAt !== undefined) data.lastContactedAt = nullableDateValue(body.lastContactedAt, 'lastContactedAt')
     const criteriaTouched = ['budgetMin', 'budgetMax', 'preferredType', 'preferredCity', 'preferredBedrooms', 'preferredAreaMin', 'preferredAreaMax']
     .some((field) => body[field] !== undefined)
   if (criteriaTouched) {

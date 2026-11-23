@@ -40,6 +40,44 @@
         <p v-if="deal.notes" class="description">{{ deal.notes }}</p>
       </section>
 
+      <section v-if="isRental" class="panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'عقد الإيجار والتجديد' : 'Lease & renewal' }}</h2>
+          <span v-if="renewalState" class="lease-pill" :class="`lease-${renewalState}`">
+            {{ leaseStateLabel(renewalState) }}
+          </span>
+        </div>
+        <dl class="facts">
+          <div><dt>{{ store.isArabic ? 'بداية العقد' : 'Lease start' }}</dt><dd>{{ formatDate(deal.leaseStartAt) }}</dd></div>
+          <div><dt>{{ store.isArabic ? 'نهاية العقد' : 'Lease end' }}</dt><dd>{{ formatDate(deal.leaseEndAt) }}</dd></div>
+          <div><dt>{{ store.isArabic ? 'إشعار التجديد' : 'Renewal notice' }}</dt><dd>{{ deal.renewalNoticeDays ?? 30 }} {{ store.isArabic ? 'يوم' : 'days' }}</dd></div>
+          <div v-if="daysLeft !== null">
+            <dt>{{ store.isArabic ? 'الأيام المتبقية' : 'Days remaining' }}</dt>
+            <dd :class="{ 'days-expired': daysLeft < 0 }">{{ daysLeft }}</dd>
+          </div>
+        </dl>
+        <p v-if="renewalState" class="lease-note">
+          {{ renewalMessage }}
+        </p>
+        <form v-if="canEdit" class="form-grid" @submit.prevent="saveLease">
+          <label>
+            <span>{{ store.isArabic ? 'بداية العقد' : 'Lease start' }}</span>
+            <input v-model="leaseForm.leaseStartAt" type="date" />
+          </label>
+          <label>
+            <span>{{ store.isArabic ? 'نهاية العقد' : 'Lease end' }}</span>
+            <input v-model="leaseForm.leaseEndAt" type="date" />
+          </label>
+          <label>
+            <span>{{ store.isArabic ? 'إشعار التجديد (أيام)' : 'Renewal notice (days)' }}</span>
+            <input v-model="leaseForm.renewalNoticeDays" type="number" min="0" max="365" />
+          </label>
+          <button class="btn btn-primary" type="submit" :disabled="saving">
+            {{ store.isArabic ? 'حفظ العقد' : 'Save lease' }}
+          </button>
+        </form>
+      </section>
+
       <template v-if="store.canManageFinance">
         <section class="panel">
           <h2>{{ store.isArabic ? 'ملخص الدفعات' : 'Payment summary' }}</h2>
@@ -165,6 +203,7 @@ import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { dealTransitions } from '@/config/resources'
 import { downloadDocument } from '@/utils/documents'
+import { daysUntilLeaseEnd, leaseRenewalState, type LeaseRenewalState } from '@/utils/leases'
 import { useStore } from '@/stores'
 import type { Deal, MoneyValue, PaymentSummary } from '@/types'
 
@@ -190,8 +229,27 @@ const paymentForm = reactive({
 })
 
 const commissionForm = reactive({ amount: '', currency: '', rate: '' })
+const leaseForm = reactive({ leaseStartAt: '', leaseEndAt: '', renewalNoticeDays: '30' })
 
 const canEdit = computed(() => store.canManage || Boolean(store.user && deal.value && deal.value.userId === store.user.id))
+const isRental = computed(() => deal.value?.type === 'RENT')
+const renewalState = computed<LeaseRenewalState | null>(() =>
+  deal.value ? leaseRenewalState(deal.value) : null
+)
+const daysLeft = computed(() => deal.value?.leaseEndAt ? daysUntilLeaseEnd(deal.value.leaseEndAt) : null)
+const renewalMessage = computed(() => {
+  if (!deal.value || !renewalState.value || daysLeft.value === null) return ''
+  const days = daysLeft.value
+  if (renewalState.value === 'expired') {
+    return store.isArabic
+      ? `انتهى هذا العقد قبل ${Math.abs(days)} يوم. جدّده أو أغلق الصفقة.`
+      : `This lease expired ${Math.abs(days)} day(s) ago. Renew it or close the deal.`
+  }
+  const notice = deal.value.renewalNoticeDays ?? 30
+  return store.isArabic
+    ? `يتبقى ${days} يوم على نهاية العقد، ضمن نافذة الإشعار البالغة ${notice} يوماً.`
+    : `${days} day(s) until lease end, inside the ${notice}-day notice window.`
+})
 const canViewFinance = computed(() => store.canManageFinance)
 const leadName = computed(() => {
   const lead = deal.value?.lead
@@ -219,6 +277,9 @@ async function load(): Promise<void> {
     deal.value = response.data
     paymentForm.currency = response.data.currency || ''
     commissionForm.currency = response.data.currency || ''
+    leaseForm.leaseStartAt = response.data.leaseStartAt ? String(response.data.leaseStartAt).slice(0, 10) : ''
+    leaseForm.leaseEndAt = response.data.leaseEndAt ? String(response.data.leaseEndAt).slice(0, 10) : ''
+    leaseForm.renewalNoticeDays = String(response.data.renewalNoticeDays ?? 30)
     if (canViewFinance.value) {
       const summaryResponse = await apiGet<PaymentSummary>('/finance/payments/summary', { params: { dealId: id } })
       summary.value = summaryResponse.data
@@ -249,6 +310,33 @@ function money(amount: MoneyValue | null | undefined, currency: string | null | 
     }).format(Number(amount || 0))
   } catch {
     return `${amount || 0} ${code}`
+  }
+}
+
+function leaseStateLabel(state: LeaseRenewalState): string {
+  const labels: Record<LeaseRenewalState, [string, string]> = {
+    expired: ['Expired', 'منتهي'],
+    due: ['Renewal due', 'تجديد مستحق'],
+    upcoming: ['Upcoming', 'قادم']
+  }
+  return store.isArabic ? labels[state][1] : labels[state][0]
+}
+
+async function saveLease(): Promise<void> {
+  if (!deal.value) return
+  saving.value = true
+  actionError.value = ''
+  try {
+    await apiPatch(`/deals/${deal.value.id}`, {
+      leaseStartAt: leaseForm.leaseStartAt || null,
+      leaseEndAt: leaseForm.leaseEndAt || null,
+      renewalNoticeDays: Number(leaseForm.renewalNoticeDays)
+    })
+    await load()
+  } catch (error) {
+    actionError.value = errorMessage(error)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -353,6 +441,11 @@ h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .status-active { background: #e0e7ff; color: #3730a3; }
 .status-completed { background: #dcfce7; color: #166534; }
 .status-cancelled { background: #fee2e2; color: #991b1b; }
+.lease-pill { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: #e0e7ff; color: #3730a3; }
+.lease-expired { background: #fee2e2; color: #991b1b; }
+.lease-due { background: #fef3c7; color: #92400e; }
+.days-expired { color: #991b1b; }
+.lease-note { font-size: 0.82rem; color: #4b5563; background: #f8fafc; border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0 0 1rem; }
 .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.3rem; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; }
 .panel-head a { color: #4f46e5; font-size: 0.82rem; text-decoration: none; }

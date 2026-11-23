@@ -121,7 +121,13 @@ test('Part 3: reminder day keys and overdue classification are UTC-stable', () =
 
 test('Part 3: reminder run reports zero work when there are no active organizations', async () => {
   const result = await reminders.runReminders(new Date('2026-06-01T10:00:00.000Z'))
-  assert.deepEqual(result, { organizations: 0, paymentReminders: 0, appointmentReminders: 0 })
+  assert.deepEqual(result, {
+    organizations: 0,
+    paymentReminders: 0,
+    appointmentReminders: 0,
+    leadFollowUpReminders: 0,
+    leaseRenewalReminders: 0
+  })
 })
 
 test('Part 3: scheduler start and stop are safe during tests', () => {

@@ -34,6 +34,9 @@
         <router-link to="/activity" class="nav-link">
           <i class="fas fa-clock-rotate-left"></i><span>{{ t('Activity') }}</span>
         </router-link>
+        <router-link v-if="store.user?.role === 'AGENT'" to="/finance/commission-statements" class="nav-link">
+          <i class="fas fa-file-invoice-dollar"></i><span>{{ t('My statements') }}</span>
+        </router-link>
 
         <div v-if="store.canManageFinance" class="nav-group">
           <span class="nav-heading">{{ t('Finance') }}</span>
@@ -45,6 +48,9 @@
           </router-link>
           <router-link to="/finance/commissions" class="nav-link nav-child">
             <i class="fas fa-percent"></i><span>{{ t('Commissions') }}</span>
+          </router-link>
+          <router-link to="/finance/commission-statements" class="nav-link nav-child">
+            <i class="fas fa-file-invoice-dollar"></i><span>{{ t('Commission statements') }}</span>
           </router-link>
           <router-link to="/finance/exchange-rates" class="nav-link nav-child">
             <i class="fas fa-arrow-right-arrow-left"></i><span>{{ t('Exchange rates') }}</span>
@@ -157,6 +163,8 @@ const ArabicLabels: Record<string, string> = {
   Payments: 'المدفوعات',
   Expenses: 'المصروفات',
   Commissions: 'العمولات',
+  'Commission statements': 'كشوف العمولات',
+  'My statements': 'كشوفي',
   'Exchange rates': 'أسعار الصرف',
   Reports: 'التقارير',
   Administration: 'الإدارة',

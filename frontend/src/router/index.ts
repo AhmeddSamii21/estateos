@@ -28,6 +28,7 @@ const routes = [
       { path: 'finance/payments', name: 'Payments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'payments' }, meta: { title: 'Payments', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/expenses', name: 'Expenses', component: () => import('@/views/ResourceView.vue'), props: { resource: 'expenses' }, meta: { title: 'Expenses', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/commissions', name: 'Commissions', component: () => import('@/views/ResourceView.vue'), props: { resource: 'commissions' }, meta: { title: 'Commissions', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
+      { path: 'finance/commission-statements', name: 'CommissionStatements', component: () => import('@/views/CommissionStatementsView.vue'), meta: { title: 'Commission statements' } },
       { path: 'finance/exchange-rates', name: 'ExchangeRates', component: () => import('@/views/SettingsView.vue'), props: { fxOnly: true }, meta: { title: 'Exchange rates', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'maintenance', name: 'Maintenance', component: () => import('@/views/ResourceView.vue'), props: { resource: 'maintenance' }, meta: { title: 'Maintenance' } },
       { path: 'documents', name: 'Documents', component: () => import('@/views/DocumentsView.vue'), meta: { title: 'Documents' } },
