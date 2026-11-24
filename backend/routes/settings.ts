@@ -9,6 +9,12 @@ import { listExchangeRatesForOrg, resolveCurrency, upsertCurrencyRecord } from '
 import { parseRate } from '../utils/money'
 import { logAudit } from '../utils/audit'
 import { permissionMatrix } from '../utils/permissions'
+import {
+  EMPTY_WHATSAPP_TEMPLATES,
+  sanitizeWhatsappTemplates,
+  storedWhatsappTemplates,
+  WHATSAPP_TEMPLATE_KEYS
+} from '../utils/whatsappTemplates'
 
 const router = Router()
 // General settings stay manager-only; the FX endpoints below are additionally
@@ -52,6 +58,69 @@ router.patch('/', async (req, res, next) => {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
       return next(createError('Organization not found', 404))
     }
+    next(error)
+  }
+})
+
+// Package 26: optional bilingual WhatsApp message overrides. Stored inside
+// Settings.data so the change is additive and existing settings are preserved.
+router.get('/whatsapp-templates', async (req, res, next) => {
+  try {
+    requireAnyRole(req, MANAGEMENT_ROLES)
+    const organizationId = organizationIdOf(req)
+    const settings = await prisma.settings.findUnique({
+      where: { organizationId },
+      select: { data: true }
+    })
+    res.json({
+      success: true,
+      data: {
+        templates: settings ? storedWhatsappTemplates(settings.data) : EMPTY_WHATSAPP_TEMPLATES,
+        keys: WHATSAPP_TEMPLATE_KEYS
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/whatsapp-templates', async (req, res, next) => {
+  try {
+    requireAnyRole(req, MANAGEMENT_ROLES)
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const incoming = sanitizeWhatsappTemplates(req.body?.templates)
+    const current = await prisma.settings.findUnique({
+      where: { organizationId },
+      select: { data: true, defaultLanguage: true, defaultCurrency: true }
+    })
+    const currentData = current?.data && typeof current.data === 'object' && !Array.isArray(current.data)
+      ? current.data as Record<string, unknown>
+      : {}
+    const data = {
+      ...currentData,
+      whatsappTemplates: {
+        en: { ...storedWhatsappTemplates(currentData).en, ...incoming.en },
+        ar: { ...storedWhatsappTemplates(currentData).ar, ...incoming.ar }
+      }
+    } as Prisma.InputJsonValue
+    const settings = await prisma.$transaction(async (tx) => {
+      const saved = await tx.settings.upsert({
+        where: { organizationId },
+        create: { organizationId, defaultLanguage: 'en', defaultCurrency: 'USD', data },
+        update: { data }
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'WHATSAPP_TEMPLATES_UPDATED',
+        entityType: 'Settings',
+        entityId: organizationId,
+        details: { keys: [...Object.keys(incoming.en), ...Object.keys(incoming.ar)] }
+      })
+      return saved
+    })
+    res.json({ success: true, data: { templates: storedWhatsappTemplates(settings.data), keys: WHATSAPP_TEMPLATE_KEYS }, message: 'WhatsApp templates saved' })
+  } catch (error) {
     next(error)
   }
 })

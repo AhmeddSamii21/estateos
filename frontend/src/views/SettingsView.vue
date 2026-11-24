@@ -42,6 +42,35 @@
 
       <section v-if="!fxOnly && store.canManage" class="card">
         <div class="panel-head">
+          <h2>{{ store.isArabic ? 'قوالب رسائل واتساب' : 'WhatsApp message templates' }}</h2>
+          <span class="muted">
+            {{ store.isArabic
+              ? 'اترك الحقل فارغاً لاستخدام النص الافتراضي — استخدم الحقول الديناميكية مثل customerName.'
+              : 'Leave blank for the built-in text — use dynamic fields such as customerName.' }}
+          </span>
+        </div>
+        <div class="grid whatsapp-grid">
+          <template v-for="key in whatsappTemplateKeys" :key="key">
+            <label>
+              <span>{{ whatsappTemplateLabel(key) }} · EN</span>
+              <textarea v-model="whatsappTemplates.en[key]" rows="3" maxlength="2000" spellcheck="false"></textarea>
+            </label>
+            <label>
+              <span>{{ whatsappTemplateLabel(key) }} · AR</span>
+              <textarea v-model="whatsappTemplates.ar[key]" rows="3" maxlength="2000" dir="rtl" spellcheck="false"></textarea>
+            </label>
+          </template>
+        </div>
+        <div class="actions">
+          <button class="btn btn-quiet" type="button" :disabled="savingWhatsapp" @click="onSaveWhatsappTemplates">
+            {{ savingWhatsapp ? '…' : (store.isArabic ? 'حفظ قوالب واتساب' : 'Save WhatsApp templates') }}
+          </button>
+          <span v-if="whatsappMessage" class="muted">{{ whatsappMessage }}</span>
+        </div>
+      </section>
+
+      <section v-if="!fxOnly && store.canManage" class="card">
+        <div class="panel-head">
           <h2>{{ store.isArabic ? 'مصفوفة الأدوار والصلاحيات' : 'Role & permission matrix' }}</h2>
           <span class="muted">
             {{ store.isArabic ? 'الصلاحيات الفعّالة حسب الدور — للعرض فقط' : 'Effective permissions by role — read only' }}
@@ -291,6 +320,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPatch, apiPost, errorMessage, tokenStore } from '@/api/client'
 import { DEFAULT_PERMISSION_MATRIX, permissionLabel, roleLabel } from '@/config/permissions'
+import { cacheWhatsAppOverrides } from '@/utils/whatsapp'
 import { useStore } from '@/stores'
 import {
   WEBHOOK_EVENT_CODES,
@@ -319,6 +349,30 @@ const fxError = ref(false)
 const rawData = ref('{}')
 const fx = ref<ExchangeRateOverview | null>(null)
 const permissionMatrix = ref<PermissionMatrix>(DEFAULT_PERMISSION_MATRIX)
+
+const whatsappTemplateKeys = [
+  'propertyShare',
+  'appointmentConfirmation',
+  'appointmentReminder',
+  'installmentReminder',
+  'leadFollowUp'
+] as const
+type WhatsAppTemplateKey = (typeof whatsappTemplateKeys)[number]
+type WhatsAppTemplatesResponse = { templates: Record<'en' | 'ar', Partial<Record<WhatsAppTemplateKey, string>>> }
+const whatsappTemplates = reactive<Record<'en' | 'ar', Record<string, string>>>({ en: {}, ar: {} })
+const whatsappSaving = ref(false)
+const whatsappMessage = ref('')
+const WHATSAPP_TEMPLATE_LABELS: Record<WhatsAppTemplateKey, [string, string]> = {
+  propertyShare: ['Property share pitch', 'نص مشاركة العقار'],
+  appointmentConfirmation: ['Appointment confirmation', 'تأكيد الموعد'],
+  appointmentReminder: ['Appointment reminder', 'تذكير الموعد'],
+  installmentReminder: ['Installment reminder', 'تذكير القسط'],
+  leadFollowUp: ['Lead follow-up', 'متابعة العميل']
+}
+function whatsappTemplateLabel(key: WhatsAppTemplateKey): string {
+  const pair = WHATSAPP_TEMPLATE_LABELS[key]
+  return store.isArabic ? pair[1] : pair[0]
+}
 
 const form = reactive({ defaultLanguage: 'en', defaultCurrency: 'USD' })
 const currencyForm = reactive({ code: '', name: '', symbol: '' })
@@ -356,6 +410,7 @@ onMounted(async () => {
       rateForm.fromCurrency = form.defaultCurrency
       rateForm.toCurrency = fx.value?.baseCurrency || form.defaultCurrency
     }
+    if (!props.fxOnly && store.canManage) await loadWhatsappTemplates()
     if (!props.fxOnly && isAdmin()) await loadWebhooks()
   } catch (e) {
     isError.value = true
@@ -366,6 +421,43 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function loadWhatsappTemplates(): Promise<void> {
+  try {
+    const response = await apiGet<WhatsAppTemplatesResponse>('/settings/whatsapp-templates')
+    for (const language of ['en', 'ar'] as const) {
+      const saved = response.data.templates?.[language] || {}
+      for (const key of whatsappTemplateKeys) whatsappTemplates[language][key] = saved[key] || ''
+    }
+    cacheWhatsAppOverrides({
+      en: Object.fromEntries(Object.entries(whatsappTemplates.en).filter(([, value]) => value)),
+      ar: Object.fromEntries(Object.entries(whatsappTemplates.ar).filter(([, value]) => value))
+    })
+  } catch {
+    // Built-in templates remain available when overrides cannot be loaded.
+  }
+}
+
+async function onSaveWhatsappTemplates(): Promise<void> {
+  whatsappSaving.value = true
+  whatsappMessage.value = ''
+  try {
+    const templates: Record<'en' | 'ar', Record<string, string>> = { en: {}, ar: {} }
+    for (const language of ['en', 'ar'] as const) {
+      for (const key of whatsappTemplateKeys) {
+        const value = (whatsappTemplates[language][key] || '').trim()
+        if (value) templates[language][key] = value
+      }
+    }
+    const response = await apiPatch<WhatsAppTemplatesResponse>('/settings/whatsapp-templates', { templates })
+    cacheWhatsAppOverrides(response.data.templates)
+    whatsappMessage.value = store.isArabic ? 'تم حفظ القوالب.' : 'Templates saved.'
+  } catch (e) {
+    whatsappMessage.value = errorMessage(e)
+  } finally {
+    whatsappSaving.value = false
+  }
+}
 
 async function onDownloadBackup(): Promise<void> {
   downloadingBackup.value = true
@@ -563,6 +655,8 @@ h3 { font-size: 0.95rem; margin: 1.4rem 0 0.6rem; }
 .section-title { margin-top: 0; }
 .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.4rem; margin-bottom: 1rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.9rem; }
+.whatsapp-grid { grid-template-columns: repeat(2, minmax(260px, 1fr)); }
+.whatsapp-grid textarea { font-family: inherit; resize: vertical; }
 label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; color: #374151; }
 label.full { margin-top: 0.9rem; }
 input, select, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.55rem 0.65rem; font-size: 0.9rem; font-family: inherit; }

@@ -7,6 +7,10 @@
           <i class="fas fa-share-from-square"></i>
           {{ store.isArabic ? 'مشاركة العقار' : 'Share Property' }}
         </button>
+        <button v-if="property" class="btn btn-whatsapp no-print" type="button" :disabled="sharing" @click="whatsappForProperty">
+          <i class="fab fa-whatsapp"></i>
+          {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}
+        </button>
         <template v-if="property && (store.canManage || isAssignedAgent)">
           <button class="btn btn-quiet" type="button" @click="onDuplicate">
             <i class="fas fa-copy"></i> {{ store.isArabic ? 'نسخ العقار' : 'Duplicate Property' }}
@@ -216,6 +220,7 @@ import PropertyAttachmentsPanel from '@/components/PropertyAttachmentsPanel.vue'
 import { downloadDocument } from '@/utils/documents'
 import { loadPropertyImageObjectUrl } from '@/utils/propertyImages'
 import { buildClientPropertySummary } from '@/utils/propertyShare'
+import { openWhatsAppChat } from '@/utils/whatsapp'
 import { parsePriceHistory } from '@/utils/priceHistory'
 import { DUPLICATE_DRAFT_KEY, DUPLICATE_QUERY_FLAG } from '@/utils/propertyDuplicate'
 import { useStore } from '@/stores'
@@ -494,6 +499,41 @@ function ownerLabel(owner: unknown): string {
   return company || person || (typeof record.email === 'string' ? record.email : '—')
 }
 
+async function whatsappForProperty(): Promise<void> {
+  const current = property.value
+  if (!current) return
+  let link = shareLink.value?.url || undefined
+  if (!link) {
+    await onGenerateShareLink()
+    link = shareLink.value?.url || undefined
+  }
+  const owner = current.owner as Record<string, unknown> | null | undefined
+  const leadPhone = current.leads?.find((lead) => Boolean(lead.phone))?.phone
+  const opened = openWhatsAppChat({
+    phone: leadPhone || owner?.phone,
+    template: 'propertyShare',
+    payload: {
+      title: current.title,
+      reference: current.referenceNumber,
+      price: current.price,
+      currency: current.currency,
+      city: current.city,
+      address: current.address,
+      bedrooms: current.bedrooms,
+      bathrooms: current.bathrooms,
+      area: current.area,
+      areaUnit: current.areaUnit,
+      link
+    },
+    language: store.isArabic ? 'ar' : 'en'
+  })
+  if (!opened) {
+    actionError.value = store.isArabic
+      ? 'لا يوجد رقم واتساب صالح للمالك أو العميل المرتبط.'
+      : 'No valid WhatsApp number is available for the owner or a linked lead.'
+  }
+}
+
 function revokeImageUrls(): void {
   Object.values(imageObjectUrls.value).forEach((url) => URL.revokeObjectURL(url))
   imageObjectUrls.value = {}
@@ -607,6 +647,8 @@ onBeforeUnmount(() => { revokeImageUrls() })
 .back { color: #4f46e5; text-decoration: none; font-size: 0.88rem; }
 .btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 8px; padding: 0.55rem 0.9rem; font-size: 0.86rem; cursor: pointer; text-decoration: none; border: 0; }
 .btn-quiet { background: #f3f4f6; color: #374151; }
+.btn-whatsapp { background: #e7f7f2; color: #075e54; border: 1px solid #b7e4d8; }
+.btn-whatsapp:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
 .hero { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.4rem; }
 h1 { margin: 0.5rem 0 0.2rem; font-size: 1.5rem; }

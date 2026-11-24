@@ -120,6 +120,12 @@
               <select :value="row.status" :disabled="statusSaving === String(row.id)" @change="onQuickStatus(row, $event)">
                 <option v-for="status in appointmentStatus" :key="status" :value="status">{{ readableStatus(status) }}</option>
               </select>
+              <button v-if="isAppointments" type="button" class="link whatsapp-link" :title="store.isArabic ? 'إرسال تذكير واتساب' : 'Send WhatsApp reminder'" @click="whatsappForAppointment(row)">
+                <i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}
+              </button>
+              <button type="button" class="link whatsapp-link" :title="store.isArabic ? 'إرسال تذكير واتساب' : 'Send WhatsApp reminder'" @click="whatsappForAppointment(row)">
+                <i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}
+              </button>
               <button type="button" class="link" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
               <button v-if="canDelete" type="button" class="link danger" @click="onDelete(row)">
                 {{ store.isArabic ? 'حذف' : 'Delete' }}
@@ -198,8 +204,14 @@
                 <button v-if="props.resource === 'leads'" type="button" class="link" @click="openActivity(row)">
                   {{ store.isArabic ? '??????' : 'Activity' }}
                 </button>
+                <button v-if="isLeads" type="button" class="link whatsapp-link" :title="store.isArabic ? 'مراسلة عبر واتساب' : 'Chat on WhatsApp'" @click="whatsappForLead(row)">
+                  <i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}
+                </button>
                 <button v-if="isLeads" type="button" class="link" @click="openFollowUp(row)">
                   {{ store.isArabic ? 'متابعة' : 'Follow up' }}
+                </button>
+                <button v-if="isPayments" type="button" class="link whatsapp-link" :title="store.isArabic ? 'تذكير بدفعة عبر واتساب' : 'Send WhatsApp payment reminder'" @click="whatsappForPayment(row)">
+                  <i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}
                 </button>
                 <button v-if="isLeads" type="button" class="link" :disabled="prioritySaving === String(row.id)" @click="recomputePriority(row)">
                   {{ prioritySaving === String(row.id)
@@ -288,6 +300,10 @@
         </div>
         <div class="modal-body">
           <p class="follow-up-lead">{{ leadLabel(followUpLead) }}</p>
+          <button type="button" class="btn btn-whatsapp no-print" @click="whatsappForLead(followUpLead)">
+            <i class="fab fa-whatsapp"></i>
+            {{ store.isArabic ? 'مراسلة العميل عبر واتساب' : 'Message lead on WhatsApp' }}
+          </button>
           <label>
             <span>{{ store.isArabic ? 'الملاحظة' : 'Note' }} *</span>
             <textarea v-model="followUpBody" rows="4" required maxlength="2000"></textarea>
@@ -347,6 +363,7 @@ import { downloadCsv, type CsvRow } from '@/utils/csv'
 import type { CsvImportPreview } from '@/utils/csvImport'
 import { followUpBucket, type FollowUpBucket } from '@/utils/followUps'
 import { agingLabel, PAYMENT_AGING_BUCKETS } from '@/utils/paymentAging'
+import { openWhatsAppChat } from '@/utils/whatsapp'
 import { useStore } from '@/stores'
 import type { ApiWarning, AppointmentConflictInfo } from '@/types'
 
@@ -586,6 +603,81 @@ function openActivity(row: Row): void {
 
 function leadLabel(lead: Row): string {
   return `${lead.firstName || ''}${lead.lastName ? ` ${lead.lastName}` : ''}`.trim() || String(lead.email || 'Lead')
+}
+
+// Package 26: WhatsApp click-to-chat. Only public contact/listing fields are
+// placed in messages; internal notes are deliberately never read here.
+const whatsappLanguage = () => (store.isArabic ? 'ar' : 'en') as 'ar' | 'en'
+
+function reportWhatsAppUnavailable(): void {
+  store.error = store.isArabic
+    ? 'لا يوجد رقم واتساب صالح لهذا السجل.'
+    : 'No valid WhatsApp phone number is available for this record.'
+}
+
+async function leadById(leadId: unknown): Promise<Row | null> {
+  if (leadId === null || leadId === undefined || leadId === '') return null
+  try {
+    const response = await apiGet<Row>(`/leads/${encodeURIComponent(String(leadId))}`)
+    return response.data || null
+  } catch {
+    return null
+  }
+}
+
+function whatsappForLead(row: Row): void {
+  const opened = openWhatsAppChat({
+    phone: row.phone,
+    template: 'leadFollowUp',
+    payload: { customerName: leadLabel(row), title: row.propertyTitle as string | undefined },
+    language: whatsappLanguage()
+  })
+  if (!opened) reportWhatsAppUnavailable()
+}
+
+async function whatsappForAppointment(row: Row): Promise<void> {
+  const lead = await leadById(row.leadId)
+  const opened = openWhatsAppChat({
+    phone: lead?.phone || row.phone,
+    template: 'appointmentReminder',
+    payload: {
+      customerName: lead ? leadLabel(lead) : undefined,
+      title: row.title as string | undefined,
+      startsAt: row.startsAt as string | undefined
+    },
+    language: whatsappLanguage()
+  })
+  if (!opened) reportWhatsAppUnavailable()
+}
+
+async function whatsappForPayment(row: Row): Promise<void> {
+  let deal: Record<string, unknown> | null = null
+  try {
+    const response = await apiGet<Record<string, unknown>>(`/deals/${encodeURIComponent(String(row.dealId))}`)
+    deal = response.data || null
+  } catch {
+    deal = null
+  }
+  const lead = await leadById(deal?.leadId)
+  const payments = Array.isArray(deal?.payments) ? deal?.payments as Array<Record<string, unknown>> : []
+  const paid = payments
+    .filter((payment) => payment.status === 'COMPLETED')
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0)
+  const remainingBalance = Math.max(0, Number(deal?.amount || 0) - paid)
+  const opened = openWhatsAppChat({
+    phone: lead?.phone,
+    template: 'installmentReminder',
+    payload: {
+      customerName: lead ? leadLabel(lead as Row) : undefined,
+      reference: deal?.referenceNumber as string | undefined,
+      dueDate: row.dueAt as string | undefined,
+      amount: row.amount as string | number | undefined,
+      remainingBalance: String(remainingBalance),
+      currency: (row.currency || deal?.currency) as string | undefined
+    },
+    language: whatsappLanguage()
+  })
+  if (!opened) reportWhatsAppUnavailable()
 }
 
 function linkedExpenseId(row: Row): string | null {
@@ -910,6 +1002,7 @@ h2 { margin: 0; font-size: 1.15rem; }
 .btn { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 8px; padding: 0.6rem 1rem; border: 0; font-size: 0.86rem; cursor: pointer; text-decoration: none; }
 .btn-primary { background: #4f46e5; color: #fff; }
 .btn-quiet { background: #f3f4f6; color: #374151; }
+.btn-whatsapp { background: #e7f7f2; color: #075e54; border: 1px solid #b7e4d8; margin-bottom: 0.8rem; }
 .head-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .view-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
 .view-toggle button { border: 0; background: #fff; color: #374151; padding: 0.55rem 0.8rem; font-size: 0.82rem; cursor: pointer; }
@@ -982,6 +1075,7 @@ label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
 input, select, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem 0.6rem; font-size: 0.88rem; font-family: inherit; }
 .error { grid-column: 1 / -1; background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.6rem; font-size: 0.84rem; }
 .modal-actions { display: flex; gap: 0.6rem; padding: 1rem 1.2rem; border-top: 1px solid #eef2f7; }
+.whatsapp-link { color: #128c7e; white-space: nowrap; }
 @media (max-width: 640px) {
   th, td { padding: 0.55rem 0.6rem; }
   .agenda-item { grid-template-columns: 1fr; }

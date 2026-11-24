@@ -186,6 +186,7 @@
                     <th>#</th>
                     <th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th>
                     <th>{{ store.isArabic ? 'تاريخ الاستحقاق' : 'Due date' }}</th>
+                    <th class="no-print">{{ store.isArabic ? 'واتساب' : 'WhatsApp' }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,6 +194,11 @@
                     <td>{{ row.index }}</td>
                     <td>{{ money(row.amount, deal.currency) }}</td>
                     <td>{{ installmentDate(row.dueAt) }}</td>
+                    <td class="no-print">
+                      <button type="button" class="link whatsapp-link" @click="whatsappForInstallment(row)">
+                        <i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'تذكير' : 'Remind' }}
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -337,6 +343,7 @@ import {
 } from '@/utils/installments'
 import { daysUntilLeaseEnd, leaseRenewalState, type LeaseRenewalState } from '@/utils/leases'
 import { agingLabel } from '@/utils/paymentAging'
+import { openWhatsAppChat } from '@/utils/whatsapp'
 import { useStore } from '@/stores'
 import type {
   Deal,
@@ -562,6 +569,40 @@ function installmentDate(value: string): string {
   return date.toLocaleDateString(store.isArabic ? 'ar' : 'en', dateOnly ? { timeZone: 'UTC' } : undefined)
 }
 
+async function whatsappForInstallment(row: { index: number; amount: string; dueAt: string }): Promise<void> {
+  const current = deal.value
+  if (!current) return
+  let lead: { phone?: string | null; firstName?: string | null; lastName?: string | null } | null = null
+  if (current.leadId) {
+    try {
+      const response = await apiGet<typeof lead>(`/leads/${encodeURIComponent(current.leadId)}`)
+      lead = response.data
+    } catch {
+      lead = null
+    }
+  }
+  const rows = installmentPreview.value?.installments || []
+  const remaining = rows
+    .filter((item) => item.index <= row.index)
+    .reduce((total, item) => total + Number(item.amount || 0), 0)
+  const opened = openWhatsAppChat({
+    phone: lead?.phone,
+    template: 'installmentReminder',
+    payload: {
+      customerName: [lead?.firstName, lead?.lastName].filter(Boolean).join(' '),
+      reference: current.referenceNumber,
+      dueDate: row.dueAt,
+      amount: row.amount,
+      remainingBalance: String(remaining),
+      currency: current.currency
+    },
+    language: store.isArabic ? 'ar' : 'en'
+  })
+  if (!opened) {
+    actionError.value = store.isArabic ? 'لا يوجد رقم واتساب صالح للعميل.' : 'No valid WhatsApp number for the lead on this deal.'
+  }
+}
+
 function money(amount: MoneyValue | null | undefined, currency: string | null | undefined): string {
   const code = currency?.trim().toUpperCase()
   if (!code) return `${amount || 0} UNSPECIFIED`
@@ -761,6 +802,7 @@ input, select { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem 0
 .list-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 0; border-block-end: 1px solid #f3f4f6; font-size: 0.86rem; }
 .list-row span:first-child { flex: 1; }
 .link { background: none; border: 0; color: #4f46e5; cursor: pointer; }
+.whatsapp-link { color: #128c7e; white-space: nowrap; }
 table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 th, td { text-align: start; padding: 0.55rem 0.6rem; border-block-end: 1px solid #f3f4f6; }
 th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
