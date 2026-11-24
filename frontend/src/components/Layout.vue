@@ -83,6 +83,12 @@
           <router-link to="/quotas" class="nav-link nav-child">
             <i class="fas fa-gauge-high"></i><span>{{ t('Plan & quotas') }}</span>
           </router-link>
+          <router-link to="/follow-ups" class="nav-link nav-child">
+            <i class="fas fa-bell-clock"></i><span>{{ t('Follow-ups') }}</span>
+          </router-link>
+          <router-link to="/inventory" class="nav-link nav-child">
+            <i class="fas fa-building"></i><span>{{ t('Unit inventory') }}</span>
+          </router-link>
           <router-link v-if="store.canManage || store.user?.role === 'TEAM_LEAD'" to="/users" class="nav-link nav-child">
             <i class="fas fa-users"></i><span>{{ t('Users') }}</span>
           </router-link>

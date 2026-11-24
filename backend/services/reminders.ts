@@ -5,6 +5,7 @@ import { leadScope } from '../utils/scope'
 import { followUpBucket, startOfUtcDay } from '../utils/followUps'
 import { UNCONTACTED_SLA_HOURS, uncontactedLeadWhere } from '../utils/reportMetrics'
 import { daysUntilLeaseEnd, isLeaseRenewalDue, leaseRenewalState, MAX_RENEWAL_NOTICE_DAYS } from '../utils/leases'
+import { runFollowUpAutomation } from '../utils/followUpAutomation'
 
 const DEFAULT_DUE_SOON_HOURS = 48
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000
@@ -416,9 +417,24 @@ async function runSafely(label: string) {
   if (running) return
   running = true
   try {
-    const res = await runReminders(new Date())
+    const now = new Date()
+    const res = await runReminders(now)
+    // Package 41: the same scheduler evaluates tenant-owned automation rules.
+    const organizations = await prisma.organization.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true }
+    })
+    let automationCreated = 0
+    for (const organization of organizations) {
+      try {
+        const automation = await runFollowUpAutomation(organization.id, now)
+        automationCreated += automation.created
+      } catch (err) {
+        console.error(`[reminders] follow-up automation failed for ${organization.id}`, err)
+      }
+    }
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} upcoming=${res.appointmentUpcomingReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders} maintenance=${res.maintenanceReminders}`)
+      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} upcoming=${res.appointmentUpcomingReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders} maintenance=${res.maintenanceReminders} automation=${automationCreated}`)
     }
   } catch (err) {
     console.error(`[reminders] ${label} failed`, err)

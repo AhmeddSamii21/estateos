@@ -239,6 +239,9 @@ model Organization {
   // Packages 39-40: tenant white-label branding and SaaS plan quotas.
   branding         OrganizationBranding?
   planQuota        PlanQuota?
+  // Package 41: tenant-owned automation rules and generated tasks.
+  followUpRules    FollowUpRule[]
+  followUpTasks    FollowUpTask[]
 }
 
 enum BrandingTheme {
@@ -294,6 +297,77 @@ model PlanQuota {
   organization    Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
+}
+
+enum FollowUpTrigger {
+  NEW_LEAD
+  NO_CONTACT
+  VIEWING_NO_DEAL
+  DEAL_STALLED
+}
+
+enum FollowUpChannel {
+  NOTIFICATION
+  EMAIL
+  WHATSAPP
+}
+
+enum FollowUpTaskStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+model FollowUpRule {
+  id             String          @id @default(uuid())
+  organizationId String
+  name           String
+  nameAr         String?
+  trigger        FollowUpTrigger
+  conditionDays  Int             @default(3)
+  channel        FollowUpChannel @default(NOTIFICATION)
+  template       String
+  templateAr     String?
+  priority       Int             @default(0)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  tasks          FollowUpTask[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@index([organizationId, trigger])
+}
+
+model FollowUpTask {
+  id             String            @id @default(uuid())
+  organizationId String
+  ruleId         String
+  leadId         String?
+  dealId         String?
+  userId         String?
+  title          String
+  titleAr        String?
+  dueAt          DateTime
+  status         FollowUpTaskStatus @default(PENDING)
+  sourceKey      String?           @unique
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  rule           FollowUpRule      @relation(fields: [ruleId], references: [id])
+  lead           Lead?             @relation(fields: [leadId], references: [id])
+  deal           Deal?             @relation(fields: [dealId], references: [id])
+  user           User?             @relation("FollowUpTaskAssignee", fields: [userId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([organizationId, dueAt])
+  @@index([ruleId])
 }
 
 // Package 27: a branch groups teams and users. All rows stay inside one tenant.
@@ -437,6 +511,7 @@ model User {
   branch         Branch? @relation(fields: [branchId], references: [id])
   team           Team?   @relation("TeamMembers", fields: [teamId], references: [id])
   ledTeams       Team[]  @relation("TeamLeader")
+  followUpTasks  FollowUpTask[] @relation("FollowUpTaskAssignee")
 
   @@index([organizationId])
   @@index([role])
@@ -540,6 +615,10 @@ model Property {
   // side-by-side comparison sheet. Existing rows stay null and keep working.
   features        String?
   paymentTerms    String?
+  // Package 42: optional unit identity for the visual inventory grid.
+  projectName     String?
+  buildingName    String?
+  unitNumber      String?
   saleRentRatio   Decimal?  @db.Decimal(12, 2)
   isActive        Boolean   @default(true)
   deletedAt       DateTime?
@@ -692,6 +771,7 @@ model Lead {
   documents      Document[]
   deals          Deal[]
   followUpNotes  LeadNote[]
+  followUpTasks  FollowUpTask[]
 
   @@index([assignedToId])
   @@index([propertyId])
@@ -796,6 +876,8 @@ model Deal {
   closingChecklist DealClosingChecklist[]
   // Package 35: partner referral splits attached to this deal.
   referralSplits ReferralSplit[]
+  // Package 41: automated follow-up tasks attached to this deal.
+  followUpTasks  FollowUpTask[]
 
   @@index([organizationId])
   @@index([userId])

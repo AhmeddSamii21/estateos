@@ -31,6 +31,8 @@ import leaderboardRoutes from './routes/leaderboard'
 import importRoutes from './routes/imports'
 import brandingRoutes from './routes/branding'
 import quotaRoutes from './routes/quotas'
+import followUpRoutes from './routes/followUps'
+import inventoryRoutes from './routes/inventory'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
@@ -158,6 +160,8 @@ app.use('/api/leaderboard', leaderboardRoutes)
 app.use('/api/imports', importRoutes)
 app.use('/api/branding', brandingRoutes)
 app.use('/api/quotas', quotaRoutes)
+app.use('/api/follow-ups', followUpRoutes)
+app.use('/api/inventory', inventoryRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)
