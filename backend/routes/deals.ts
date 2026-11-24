@@ -17,6 +17,7 @@ import { nullableDateValue } from '../utils/followUps'
 import { buildInstallmentSchedule, installmentPaymentReferences, type InstallmentFrequency } from '../utils/installmentSchedule'
 import { dealVisibility, teamVisibility } from '../utils/visibility'
 import { assertHierarchyRefs } from '../utils/hierarchy'
+import { enforceQuota } from '../utils/planQuota'
 import {
   assertValidLease,
   daysUntilLeaseEnd,
@@ -343,6 +344,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
+    await enforceQuota(organizationId, 'deals')
     const userId = userIdOf(req)
     if (!canManageDeals(req.user?.role)) throw createError('Insufficient permissions to manage deals', 403)
     const propertyId = requiredString(req.body?.propertyId, 'propertyId', 100)

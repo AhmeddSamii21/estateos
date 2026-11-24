@@ -77,6 +77,12 @@
           <router-link to="/contracts" class="nav-link nav-child">
             <i class="fas fa-file-signature"></i><span>{{ t('Contracts') }}</span>
           </router-link>
+          <router-link to="/branding" class="nav-link nav-child">
+            <i class="fas fa-palette"></i><span>{{ t('Branding') }}</span>
+          </router-link>
+          <router-link to="/quotas" class="nav-link nav-child">
+            <i class="fas fa-gauge-high"></i><span>{{ t('Plan & quotas') }}</span>
+          </router-link>
           <router-link v-if="store.canManage || store.user?.role === 'TEAM_LEAD'" to="/users" class="nav-link nav-child">
             <i class="fas fa-users"></i><span>{{ t('Users') }}</span>
           </router-link>

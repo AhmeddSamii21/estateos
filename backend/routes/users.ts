@@ -15,6 +15,7 @@ import {
   requiredString
 } from '../utils/validation'
 import { logAudit } from '../utils/audit'
+import { enforceQuota } from '../utils/planQuota'
 
 const router = Router()
 router.use(authMiddleware)
@@ -222,6 +223,7 @@ router.get('/:id', requireRole(USER_READ_ROLES), async (req, res, next) => {
 router.post('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
+    await enforceQuota(organizationId, 'users')
     const actorRole = roleOf(req)
     const email = requiredString(req.body?.email, 'email', 254).toLowerCase()
     if (!/^\S+@\S+\.\S+$/.test(email)) throw createError('A valid email is required', 400)

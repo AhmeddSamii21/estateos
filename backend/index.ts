@@ -29,6 +29,8 @@ import referralRoutes from './routes/referrals'
 import contractRoutes from './routes/contracts'
 import leaderboardRoutes from './routes/leaderboard'
 import importRoutes from './routes/imports'
+import brandingRoutes from './routes/branding'
+import quotaRoutes from './routes/quotas'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
@@ -154,6 +156,8 @@ app.use('/api/referrals', referralRoutes)
 app.use('/api/contracts', contractRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)
 app.use('/api/imports', importRoutes)
+app.use('/api/branding', brandingRoutes)
+app.use('/api/quotas', quotaRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

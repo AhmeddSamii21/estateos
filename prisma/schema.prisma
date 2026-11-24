@@ -236,6 +236,64 @@ model Organization {
   referralPartners ReferralPartner[]
   referralSplits   ReferralSplit[]
   contractTemplates ContractTemplate[]
+  // Packages 39-40: tenant white-label branding and SaaS plan quotas.
+  branding         OrganizationBranding?
+  planQuota        PlanQuota?
+}
+
+enum BrandingTheme {
+  LIGHT
+  DARK
+  AUTO
+}
+
+model OrganizationBranding {
+  id              String        @id @default(uuid())
+  organizationId  String        @unique
+  brandName       String?
+  brandNameAr     String?
+  logoUrl         String?
+  faviconUrl      String?
+  primaryColor    String        @default("#2563EB")
+  secondaryColor  String        @default("#0F172A")
+  accentColor     String        @default("#14B8A6")
+  supportEmail    String?
+  supportPhone    String?
+  footerText      String?
+  footerTextAr    String?
+  theme           BrandingTheme @default(LIGHT)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+model PlanQuota {
+  id              String    @id @default(uuid())
+  organizationId  String    @unique
+  plan            PlanTier  @default(FREE)
+  // Nullable limits mean an unlimited Enterprise plan or a deliberate override.
+  userLimit       Int?
+  propertyLimit   Int?
+  dealLimit       Int?
+  storageMbLimit  Int?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
 }
 
 // Package 27: a branch groups teams and users. All rows stay inside one tenant.

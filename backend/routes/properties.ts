@@ -37,6 +37,7 @@ import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { createStorageKey, sanitizeOriginalName, validateDocumentFile, validateImageFile } from '../utils/files'
 import { readDocument, readPropertyImage, removeDocument, removePropertyImage, writeDocument, writePropertyImage } from '../storage/local'
 import { parseAttachmentKind, serializeAttachment, validateAttachmentUrl } from '../utils/propertyAttachments'
+import { enforceQuota } from '../utils/planQuota'
 import { canSee, propertyVisibility, teamVisibility, visibility } from '../utils/visibility'
 import { assertHierarchyRefs } from '../utils/hierarchy'
 import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
@@ -763,6 +764,7 @@ router.patch('/:id/status', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
+    await enforceQuota(organizationId, 'properties')
     const userId = userIdOf(req)
     const assignedAgentId = optionalString(req.body?.assignedAgent, 'assignedAgent', 100)
       || optionalString(req.body?.assignedAgentId, 'assignedAgentId', 100)
