@@ -82,7 +82,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { apiGet, errorMessage, tokenStore } from '@/api/client'
+import { apiGet, demoFetch, errorMessage, tokenStore } from '@/api/client'
 import { useStore } from '@/stores'
 import type { ActivityEntry } from '@/types'
 
@@ -155,7 +155,7 @@ async function onExport(): Promise<void> {
   try {
     const token = tokenStore.get()
     const params = new URLSearchParams(queryParams())
-    const response = await fetch(`/api/activity/export?${params.toString()}`, {
+    const response = await demoFetch(`/api/activity/export?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
     if (!response.ok) throw new Error(store.isArabic ? 'تعذّر تصدير السجل.' : 'Audit export failed.')

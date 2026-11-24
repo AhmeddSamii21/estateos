@@ -1,0 +1,12 @@
+{
+  "name": "estateos-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Convenience scripts for the EstateOS Vue frontend. Dependencies live in the repository root.",
+  "scripts": {
+    "dev": "npm --prefix .. run dev",
+    "build": "npm --prefix .. run build",
+    "preview": "npm --prefix .. run preview",
+    "typecheck": "npm --prefix .. run typecheck:frontend"
+  }
+}

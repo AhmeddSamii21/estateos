@@ -93,6 +93,7 @@ import { useRoute } from 'vue-router'
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useStore } from '@/stores'
+import { demoFetch } from '@/api/client'
 import { attachmentKindLabel } from '@/utils/propertyAttachments'
 import type { PublicProperty } from '@/types'
 
@@ -121,7 +122,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch(`/api/public/properties/${encodeURIComponent(token.value)}`)
+    const response = await demoFetch(`/api/public/properties/${encodeURIComponent(token.value)}`)
     if (!response.ok) throw new Error(store.isArabic ? 'الرابط غير صالح أو منتهي الصلاحية.' : 'This link is invalid or has expired.')
     const body = await response.json() as { success?: boolean; data?: PublicProperty; error?: { message?: string } }
     if (!body.success || !body.data) throw new Error(body.error?.message || (store.isArabic ? 'الرابط غير متاح' : 'Link unavailable'))

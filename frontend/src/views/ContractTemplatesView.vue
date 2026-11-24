@@ -157,7 +157,7 @@ async function load(): Promise<void> {
     ])
     templates.value = templateResponse.data || []
     deals.value = dealResponse.data || []
-    if (!selectedId.value && templates.value.length) selected(templates.value[0])
+    if (!selectedId.value && templates.value.length) select(templates.value[0])
     if (!dealId.value && deals.value.length) dealId.value = deals.value[0].id
     await renderPreview()
   } catch (caught) {

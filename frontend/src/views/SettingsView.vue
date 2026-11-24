@@ -383,7 +383,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { apiGet, apiPatch, apiPost, errorMessage, tokenStore } from '@/api/client'
+import { apiGet, apiPatch, apiPost, demoFetch, errorMessage, tokenStore } from '@/api/client'
 import { DEFAULT_PERMISSION_MATRIX, permissionLabel, roleLabel } from '@/config/permissions'
 import { cacheWhatsAppOverrides } from '@/utils/whatsapp'
 import { useStore } from '@/stores'
@@ -586,7 +586,7 @@ async function onDownloadBackup(): Promise<void> {
   isError.value = false
   try {
     const token = tokenStore.get()
-    const response = await fetch('/api/admin/export-snapshot', {
+    const response = await demoFetch('/api/admin/export-snapshot', {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
     if (!response.ok) throw new Error(store.isArabic

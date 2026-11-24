@@ -175,7 +175,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { apiGet, errorMessage, tokenStore, type ApiEnvelope } from '@/api/client'
+import { apiGet, demoFetch, errorMessage, tokenStore, type ApiEnvelope } from '@/api/client'
 import BarList from '@/components/BarList.vue'
 import { downloadCsv, type CsvColumn, type CsvRow } from '@/utils/csv'
 import { agingLabel, PAYMENT_AGING_BUCKETS } from '@/utils/paymentAging'
@@ -329,7 +329,7 @@ async function onDownloadUncontactedCsv(): Promise<void> {
   csvBusy.value = true
   csvError.value = ''
   try {
-    const response = await fetch('/api/reports/uncontacted-leads?format=csv', {
+    const response = await demoFetch('/api/reports/uncontacted-leads?format=csv', {
       headers: { Authorization: `Bearer ${token}` }
     })
     if (!response.ok) throw new Error(store.isArabic ? 'تعذّر تنزيل التقرير.' : 'Unable to download the report.')

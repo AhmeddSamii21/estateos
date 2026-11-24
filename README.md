@@ -56,6 +56,26 @@ Prerequisites: Node.js and a reachable PostgreSQL server (see [RUNBOOK.md](RUNBO
 
 Demo user passwords come from `DEMO_SEED_PASSWORD` (default shown above) and can be overridden with that environment variable.
 
+## Live Demo (GitHub Pages)
+
+**URL:** <https://ahmeddsamii21.github.io/estateos/>
+
+The deployed site is a standalone, interactive demo: no API server or PostgreSQL database is required. It ships with deterministic sample data for leads, properties, the unit inventory grid, deals, payments, commissions, referrals, contracts, notifications, owner/client portals, leaderboards and settings. Every module is navigable and edits persist in the browser's `localStorage` until you choose **Reset demo data**.
+
+On the sign-in screen, pick a role button for one-click access, or use the prefilled credentials:
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Administrator | `demo.admin@estateos.local` | `EstateDemo2026!` |
+| Manager | `demo.manager@estateos.local` | `EstateDemo2026!` |
+| Team lead | `demo.teamlead@estateos.local` | `EstateDemo2026!` |
+| Agent | `demo.agent@estateos.local` | `EstateDemo2026!` |
+| Accountant | `demo.accountant@estateos.local` | `EstateDemo2026!` |
+
+The language switcher works everywhere (including the login screen), switches between English and Arabic and applies full RTL layout. To force demo mode locally, start the UI and open <http://localhost:5173/?demo=1>, or set `localStorage.setItem('estateos.forceDemo', 'true')`. Without that flag the app prefers a reachable local API and falls back to demo mode automatically when `/api/health` is unavailable.
+
+Deployment is automated by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `master` (and via `workflow_dispatch`). One-time repository setting, if not already configured: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
 ## Verification
 
 `npm run verify` runs Prisma validation, both TypeScript checks, API compilation, the full test suite and the production frontend build.

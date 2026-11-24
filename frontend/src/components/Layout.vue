@@ -173,6 +173,12 @@
         </div>
       </header>
 
+      <div v-if="demoMode" class="demo-banner">
+        <span class="demo-badge">{{ store.isArabic ? 'عرض حي' : 'LIVE DEMO' }}</span>
+        <span>{{ store.isArabic ? 'بيانات تجريبية — تُحفظ التغييرات في هذا المتصفح فقط.' : 'Sample data — changes are saved in this browser only.' }}</span>
+        <button type="button" @click="onResetDemo">{{ store.isArabic ? 'إعادة ضبط البيانات' : 'Reset data' }}</button>
+      </div>
+
       <div v-if="store.error" class="alert alert-error" role="alert">
         <i class="fas fa-circle-exclamation"></i>
         <span>{{ store.error }}</span>
@@ -196,6 +202,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import SearchModal from '@/components/SearchModal.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import { useStore } from '@/stores'
+import { demoMode, resetDemoSession } from '@/api/client'
 import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useSearchStore } from '@/stores/search'
 import type { AppNotification } from '@/types'
@@ -283,6 +290,11 @@ const isMac = computed(() => typeof navigator !== 'undefined' && /Mac|iPhone|iPa
 async function onLogout(): Promise<void> {
   await store.logout()
   await router.push({ name: 'Login' })
+}
+
+function onResetDemo(): void {
+  resetDemoSession()
+  window.location.reload()
 }
 
 async function toggleNotifications(): Promise<void> {
@@ -432,6 +444,9 @@ onBeforeUnmount(() => {
 .user-menu-item { display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: start; padding: 0.7rem 0.9rem; background: none; border: 0; color: #374151; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
 .user-menu-item:hover { background: #f3f4f6; }
 .content { padding: 1.5rem; flex: 1; }
+.demo-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 0.7rem; margin: 1rem 1.5rem 0; padding: 0.55rem 0.8rem; border: 1px solid #ddd6fe; border-radius: 8px; background: #f5f3ff; color: #5b21b6; font-size: 0.8rem; }
+.demo-badge { background: #6d28d9; color: #fff; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; }
+.demo-banner button { margin-inline-start: auto; background: none; border: 0; color: #6d28d9; font-size: 0.78rem; text-decoration: underline; cursor: pointer; }
 .alert {
   display: flex;
   align-items: center;

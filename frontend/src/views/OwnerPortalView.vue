@@ -88,6 +88,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useStore } from '@/stores'
+import { demoFetch } from '@/api/client'
 import type { PublicOwnerPortal } from '@/types'
 
 const route = useRoute()
@@ -161,7 +162,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch(`/api/public/owner-portal/${encodeURIComponent(token.value)}`)
+    const response = await demoFetch(`/api/public/owner-portal/${encodeURIComponent(token.value)}`)
     if (!response.ok) throw new Error(store.isArabic ? 'الرابط غير صالح أو تم إلغاؤه.' : 'This link is invalid or has been revoked.')
     const body = await response.json() as { success?: boolean; data?: PublicOwnerPortal; error?: { message?: string } }
     if (!body.success || !body.data) throw new Error(body.error?.message || (store.isArabic ? 'الرابط غير متاح' : 'Link unavailable'))

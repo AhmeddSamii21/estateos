@@ -1,6 +1,9 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { GlobalSearchResponse } from '@/types/search'
 import type { ApiWarning } from '@/types'
+import { demoAdapter, demoMode, ensureDemoDecision } from './demoAdapter'
+
+export { demoMode, demoFetch, resetDemoSession, DEMO_PASSWORD, DEMO_LOGIN_ACCOUNTS } from './demoAdapter'
 
 const TOKEN_KEY = 'estateos.token'
 
@@ -19,8 +22,21 @@ export const tokenStore = {
 const client = axios.create({
   baseURL: '/api',
   timeout: 20000,
-  headers: { 'Content-Type': 'application/json' }
+  headers: { 'Content-Type': 'application/json' },
+  // In demo mode this answers every request locally. With a reachable /
+  // api backend it transparently delegates to the real Axios adapter.
+  adapter: demoAdapter
 })
+
+/** True when the app is serving the standalone GitHub Pages live demo. */
+export function isDemoMode(): boolean {
+  return demoMode.value
+}
+
+/** Used by bootstrap to avoid a failed /auth/me call in static hosting mode. */
+export async function waitForApiMode(): Promise<void> {
+  await ensureDemoDecision()
+}
 
 client.interceptors.request.use((config) => {
   const token = tokenStore.get()
