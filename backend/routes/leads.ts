@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer'
-import { LeadStatus, Prisma, PropertyStatus, PropertyType, Role } from '@prisma/client'
+import { LeadPriorityTier, LeadStatus, Prisma, PropertyStatus, PropertyType, Role } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
@@ -13,6 +13,7 @@ import { scoreLeadPropertyMatch } from '../utils/leadMatching'
 import { followUpWhere, nullableDateValue, type FollowUpBucket } from '../utils/followUps'
 import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
 import { LEAD_IMPORT_FIELDS, leadImportData } from '../utils/leadImport'
+import { computeLeadPriority, LEAD_PRIORITY_TIERS } from '../utils/leadPriority'
 
 const router = Router()
 router.use(authMiddleware)
@@ -146,6 +147,40 @@ router.get('/', async (req, res, next) => {
     const { page, limit, skip } = pagination(req.query as Record<string, unknown>)
     const where = scope(organizationId)
     if (req.query.status) where.status = enumValue(req.query.status, 'status', Object.values(LeadStatus))
+    // Package 15: dedicated source, budget-range and priority filters. Range
+    // filters find leads whose budget overlaps the requested window rather
+    // than requiring both bounds to sit inside it.
+    if (req.query.source && String(req.query.source) !== 'all') {
+      where.source = { equals: String(req.query.source), mode: 'insensitive' }
+    }
+    const priorityParam = req.query.priority ?? req.query.priorityTier
+    if (priorityParam && String(priorityParam) !== 'all') {
+      where.priorityTier = enumValue(priorityParam, 'priority', LEAD_PRIORITY_TIERS) as LeadPriorityTier
+    }
+    const budgetFilters: Prisma.LeadWhereInput[] = []
+    if (req.query.budgetMin !== undefined && req.query.budgetMin !== '') {
+      const minimum = parseMoney(req.query.budgetMin, 'budgetMin', { min: 0 }) ?? '0'
+      budgetFilters.push({ budgetMax: { gte: new Prisma.Decimal(minimum) } })
+    }
+    if (req.query.budgetMax !== undefined && req.query.budgetMax !== '') {
+      const maximum = parseMoney(req.query.budgetMax, 'budgetMax', { min: 0 }) ?? '0'
+      budgetFilters.push({ budgetMin: { lte: new Prisma.Decimal(maximum) } })
+    }
+    if (req.query.minPriorityScore !== undefined && req.query.minPriorityScore !== '') {
+      const minimum = numberValue(req.query.minPriorityScore, 'minPriorityScore', { min: 0, max: 100 }) ?? 0
+      budgetFilters.push({ priorityScore: { gte: minimum } })
+    }
+    if (budgetFilters.length) where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), ...budgetFilters]
+    const sort = String(req.query.sort || '')
+    const orderBy: Prisma.LeadOrderByWithRelationInput[] = sort === 'priority_desc'
+      ? [{ priorityScore: 'desc' }, { createdAt: 'desc' }]
+      : sort === 'priority_asc'
+        ? [{ priorityScore: 'asc' }, { createdAt: 'desc' }]
+        : sort === 'oldest'
+          ? [{ createdAt: 'asc' }]
+          : sort === 'budget_desc'
+            ? [{ budgetMax: 'desc' }, { createdAt: 'desc' }]
+            : [{ createdAt: 'desc' }]
     if (req.query.followUp) {
       const bucket = enumValue(req.query.followUp, 'followUp', ['overdue', 'today', 'upcoming'] as const) as FollowUpBucket
       const bucketWhere = followUpWhere(bucket)
@@ -168,7 +203,7 @@ router.get('/', async (req, res, next) => {
 
     const [total, leads] = await Promise.all([
       prisma.lead.count({ where }),
-      prisma.lead.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } })
+      prisma.lead.findMany({ where, skip, take: limit, orderBy })
     ])
     res.json({ success: true, data: leads, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
   } catch (error) {
@@ -216,9 +251,13 @@ router.post('/import', leadImportGuard, importUploadMiddleware, async (req, res,
         const values = result.values
         const assignedToId = optionalString(values.assignedToId, 'assignedToId', 100) || userId
         const propertyId = optionalString(values.propertyId, 'propertyId', 100)
+        const data = leadImportData(values)
+        const priority = computeLeadPriority({ ...data, propertyId, createdAt: new Date() })
         const created = await tx.lead.create({
           data: {
-            ...leadImportData(values),
+            ...data,
+            priorityScore: priority.priorityScore,
+            priorityTier: priority.priorityTier,
             ...(assignedToId ? { assignedTo: { connect: { id: assignedToId } } } : {}),
             ...(propertyId ? { property: { connect: { id: propertyId } } } : {})
           }
@@ -357,6 +396,31 @@ router.get('/:id/matches', async (req, res, next) => {
   }
 })
 
+/** Manual priority refresh for imported/legacy leads; stays inside the tenant scope. */
+router.post('/:id/recompute-priority', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    const existing = await prisma.lead.findFirst({ where: { id, ...scope(organizationId) } })
+    if (!existing) throw createError('Lead not found', 404)
+    const priority = computeLeadPriority(existing)
+    const lead = await prisma.$transaction(async (tx) => {
+      const updated = await tx.lead.update({ where: { id }, data: priority })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'LEAD_PRIORITY_RECOMPUTED',
+        entityType: 'Lead',
+        entityId: id,
+        details: { ...priority }
+      })
+      return updated
+    })
+    res.json({ success: true, data: lead, message: 'Lead priority recalculated' })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
@@ -402,13 +466,16 @@ router.post('/:id/follow-ups', async (req, res, next) => {
         },
         include: { author: { select: { id: true, firstName: true, email: true } } }
       })
-      const lead = await tx.lead.update({
+      const contacted = await tx.lead.update({
         where: { id },
         data: {
           lastContactedAt: contactedAt,
           ...(nextFollowUpAt !== undefined ? { nextFollowUpAt } : {})
         }
       })
+      // Package 15: follow-up timing affects priority, so refresh the stored score.
+      const priority = computeLeadPriority({ ...existing, ...contacted })
+      const lead = await tx.lead.update({ where: { id }, data: priority })
       await logAudit(tx, {
         userId: actorId,
         action: 'LEAD_FOLLOW_UP_LOGGED',
@@ -455,10 +522,25 @@ router.post('/', async (req, res, next) => {
     const propertyId = optionalString(body.propertyId, 'propertyId', 100)
     await assertAssignable(assignedToId, propertyId, organizationId)
     const criteria = parseLeadCriteria(body)
+    const priority = computeLeadPriority({
+      source: body.source,
+      status: body.status ?? 'NEW',
+      budgetMin: criteria.budgetMin,
+      budgetMax: criteria.budgetMax,
+      email: body.email,
+      phone: body.phone,
+      preferredType: body.preferredType,
+      preferredCity: body.preferredCity,
+      propertyId,
+      nextFollowUpAt: body.nextFollowUpAt,
+      createdAt: new Date()
+    })
 
     const lead = await prisma.$transaction(async (tx) => {
       const created = await tx.lead.create({
         data: {
+          priorityScore: priority.priorityScore,
+          priorityTier: priority.priorityTier,
           firstName: requiredString(body.firstName, 'firstName', 100),
           lastName: optionalString(body.lastName, 'lastName', 100),
           email: optionalString(body.email, 'email', 254),
@@ -557,6 +639,13 @@ router.patch('/:id', async (req, res, next) => {
 
     const lead = await prisma.$transaction(async (tx) => {
       const updated = await tx.lead.update({ where: { id }, data })
+      const priority = computeLeadPriority({ ...existing, ...updated })
+      const final = (priority.priorityScore !== updated.priorityScore || priority.priorityTier !== updated.priorityTier)
+        ? await tx.lead.update({
+            where: { id },
+            data: { priorityScore: priority.priorityScore, priorityTier: priority.priorityTier }
+          })
+        : updated
       await logAudit(tx, {
         userId: userIdOf(req),
         action: 'LEAD_UPDATED',
@@ -564,10 +653,12 @@ router.patch('/:id', async (req, res, next) => {
         entityId: id,
         details: {
           before: { status: existing.status, assignedToId: existing.assignedToId, propertyId: existing.propertyId },
-          after: { status: updated.status, assignedToId: updated.assignedToId, propertyId: updated.propertyId }
+          after: { status: final.status, assignedToId: final.assignedToId, propertyId: final.propertyId },
+          priorityScore: final.priorityScore,
+          priorityTier: final.priorityTier
         }
       })
-      return updated
+      return final
     })
 
     const recipients = new Set<string>()

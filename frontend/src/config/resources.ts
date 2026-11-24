@@ -72,6 +72,9 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'email', label: 'Email' },
       { key: 'phone', label: 'Phone' },
       { key: 'status', label: 'Status' },
+      { key: 'source', label: 'Source' },
+      { key: 'priorityTier', label: 'Priority' },
+      { key: 'priorityScore', label: 'Score' },
       { key: 'lastContactedAt', label: 'Last contacted', date: true },
       { key: 'nextFollowUpAt', label: 'Next follow-up', date: true },
       { key: 'createdAt', label: 'Created', date: true }

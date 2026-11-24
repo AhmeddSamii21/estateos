@@ -77,6 +77,19 @@ export interface PropertyImage {
   createdAt?: string
 }
 
+/** Package 14: floorplan/brochure attachment shown on property pages. */
+export interface PropertyAttachment {
+  id: string
+  name: string
+  url: string
+  kind: 'FLOORPLAN' | 'BROCHURE'
+  mimeType: string | null
+  originalName: string | null
+  size: number | null
+  sortOrder: number
+  contentUrl: string | null
+}
+
 export interface PropertyActivity {
   id: string
   propertyId: string
@@ -117,6 +130,7 @@ export interface PropertyDetail extends Property {
   owner?: Record<string, unknown> | null
   assignedAgent?: Pick<AppUser, 'id' | 'email' | 'firstName' | 'role'> | null
   images?: PropertyImage[]
+  attachments?: PropertyAttachment[]
   linkedDocuments?: DocumentRecord[]
   activities?: PropertyActivity[]
   leads?: Lead[]
@@ -135,6 +149,8 @@ export interface Lead {
   phone?: string | null
   status: string
   source?: string | null
+  priorityScore?: number
+  priorityTier?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
   notes?: string | null
   budgetMin?: MoneyValue | null
   budgetMax?: MoneyValue | null
@@ -442,6 +458,7 @@ export interface PublicProperty {
     sortOrder: number
     contentUrl: string
   }>
+  attachments?: PropertyAttachment[]
 }
 
 export interface GroupCount<T extends string = string> {

@@ -4,6 +4,7 @@ import {
   AreaUnit,
   OccupancyStatus,
   Prisma,
+  PropertyAttachmentKind,
   PropertyClassification,
   PropertyCondition,
   PropertyStatus,
@@ -31,8 +32,9 @@ import { logAudit, logPropertyActivity } from '../utils/audit'
 import { priceChangeMetadata, PROPERTY_PRICE_CHANGED } from '../utils/priceHistory'
 import { buildDuplicateDraft } from '../utils/propertyDuplication'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
-import { createStorageKey, sanitizeOriginalName, validateImageFile } from '../utils/files'
-import { readPropertyImage, removePropertyImage, writePropertyImage } from '../storage/local'
+import { createStorageKey, sanitizeOriginalName, validateDocumentFile, validateImageFile } from '../utils/files'
+import { readDocument, readPropertyImage, removeDocument, removePropertyImage, writeDocument, writePropertyImage } from '../storage/local'
+import { parseAttachmentKind, serializeAttachment, validateAttachmentUrl } from '../utils/propertyAttachments'
 import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
 import { PROPERTY_IMPORT_FIELDS, propertyImportData } from '../utils/propertyImport'
 import { BOARD_STATUSES, boardQuickTransitions, groupByBoardStatus } from '../utils/propertyBoard'
@@ -49,6 +51,22 @@ function imageUploadMiddleware(req: Request, res: Response, next: NextFunction) 
   imageUpload.array('files', 10)(req, res, (error: unknown) => {
     if (error) {
       const message = error instanceof Error ? error.message : 'Image upload failed'
+      const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code) : ''
+      return next(createError(message, code === 'LIMIT_FILE_SIZE' ? 413 : 400))
+    }
+    next()
+  })
+}
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 }
+})
+
+function attachmentUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  attachmentUpload.single('file')(req, res, (error: unknown) => {
+    if (error) {
+      const message = error instanceof Error ? error.message : 'Attachment upload failed'
       const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code) : ''
       return next(createError(message, code === 'LIMIT_FILE_SIZE' ? 413 : 400))
     }
@@ -481,6 +499,12 @@ router.get('/:id', async (req, res, next) => {
         owner: true,
         assignedAgent: { select: { id: true, email: true, firstName: true, role: true } },
         images: { where: { deletedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+        // Package 14: floorplan/brochure rows live in the existing documents
+        // relation; the API aliases them as `attachments` for clients.
+        documents: {
+          where: { deletedAt: null, kind: { in: [PropertyAttachmentKind.FLOORPLAN, PropertyAttachmentKind.BROCHURE] } },
+          orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }]
+        },
         linkedDocuments: { where: { status: 'ACTIVE', deletedAt: null }, orderBy: { createdAt: 'desc' } },
         activities: { orderBy: { createdAt: 'desc' }, take: 100 },
         leads: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
@@ -497,7 +521,16 @@ router.get('/:id', async (req, res, next) => {
     // Finance-only relations are omitted entirely for non-finance viewers;
     // returning empty arrays would still leak the shape of hidden data.
     const data = canSeeFinance ? property : { ...property, deals: undefined, expenses: undefined }
-    res.json({ success: true, data })
+    res.json({
+      success: true,
+      data: {
+        ...data,
+        attachments: property.documents.map((attachment) => serializeAttachment(
+          attachment,
+          attachment.storageKey ? `/api/properties/${id}/attachments/${attachment.id}/content` : null
+        ))
+      }
+    })
   } catch (error) {
     next(error)
   }
@@ -846,6 +879,152 @@ router.delete('/:id', async (req, res, next) => {
       await logAudit(tx, { userId, action: 'PROPERTY_ARCHIVED', entityType: 'Property', entityId: id })
     })
     res.json({ success: true, message: 'Property archived successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Package 14 — floorplans & brochures
+// ---------------------------------------------------------------------------
+
+function attachmentContentUrl(propertyId: string, attachmentId: string): string {
+  return `/api/properties/${propertyId}/attachments/${attachmentId}/content`
+}
+
+router.get('/:id/attachments', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    await findAccessibleProperty(id, req)
+    const kindParam = req.query.kind
+    const kind = !kindParam || String(kindParam) === 'ALL'
+      ? undefined
+      : parseAttachmentKind(kindParam)
+    const attachments = await prisma.propertyDocument.findMany({
+      where: {
+        propertyId: id,
+        deletedAt: null,
+        ...(kind ? { kind } : { kind: { in: [PropertyAttachmentKind.FLOORPLAN, PropertyAttachmentKind.BROCHURE] } })
+      },
+      orderBy: [{ kind: 'asc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+      take: 500
+    })
+    res.json({
+      success: true,
+      data: attachments.map((attachment) => serializeAttachment(
+        attachment,
+        attachment.storageKey ? attachmentContentUrl(id, attachment.id) : null
+      ))
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Upload a document or link an external floorplan/brochure. */
+router.post('/:id/attachments', attachmentUploadMiddleware, async (req, res, next) => {
+  let storageKey: string | null = null
+  try {
+    const userId = userIdOf(req)
+    const id = String(req.params.id)
+    await findAccessibleProperty(id, req, { forWrite: true })
+    const body = (req.body || {}) as Record<string, unknown>
+    const kind = parseAttachmentKind(body.kind)
+    const existing = await prisma.propertyDocument.findMany({
+      where: { propertyId: id, deletedAt: null },
+      select: { sortOrder: true },
+      take: 500
+    })
+    const sortOrder = existing.reduce((max, item) => Math.max(max, item.sortOrder), -1) + 1
+
+    let name: string
+    let url: string
+    let mimeType: string | null = null
+    let originalName: string | null = null
+    let size: number | null = null
+    const file = req.file
+    if (file) {
+      validateDocumentFile(file)
+      storageKey = createStorageKey(file.originalname)
+      await writeDocument(storageKey, file.buffer)
+      originalName = sanitizeOriginalName(file.originalname)
+      mimeType = file.mimetype.toLowerCase()
+      size = file.size
+      name = optionalString(body.name, 'name', 200) || originalName
+      url = storageKey
+    } else {
+      url = validateAttachmentUrl(body.url)
+      name = requiredString(body.name, 'name', 200)
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const attachment = await tx.propertyDocument.create({
+        data: { propertyId: id, name, url, kind, mimeType, originalName, size, storageKey, sortOrder }
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'PROPERTY_ATTACHMENT_ADDED',
+        entityType: 'Property',
+        entityId: id,
+        details: { attachmentId: attachment.id, kind, source: file ? 'upload' : 'link' }
+      })
+      return attachment
+    })
+    res.status(201).json({
+      success: true,
+      data: serializeAttachment(created, storageKey ? attachmentContentUrl(id, created.id) : null),
+      message: 'Attachment added successfully'
+    })
+  } catch (error) {
+    if (storageKey) await removeDocument(storageKey)
+    next(error)
+  }
+})
+
+router.get('/:id/attachments/:attachmentId/content', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const attachmentId = String(req.params.attachmentId)
+    await findAccessibleProperty(id, req)
+    const attachment = await prisma.propertyDocument.findFirst({
+      where: { id: attachmentId, propertyId: id, deletedAt: null },
+      select: { storageKey: true, mimeType: true, originalName: true, name: true }
+    })
+    if (!attachment?.storageKey) throw createError('Attachment not found', 404)
+    const buffer = await readDocument(attachment.storageKey)
+    res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream')
+    res.setHeader('Content-Length', String(buffer.length))
+    res.setHeader('Content-Disposition', `inline; filename="${sanitizeOriginalName(attachment.originalName || attachment.name)}"`)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.send(buffer)
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/:id/attachments/:attachmentId', async (req, res, next) => {
+  try {
+    const userId = userIdOf(req)
+    const id = String(req.params.id)
+    const attachmentId = String(req.params.attachmentId)
+    await findAccessibleProperty(id, req, { forWrite: true })
+    const attachment = await prisma.propertyDocument.findFirst({
+      where: { id: attachmentId, propertyId: id, deletedAt: null },
+      select: { id: true, kind: true }
+    })
+    if (!attachment) throw createError('Attachment not found', 404)
+    await prisma.$transaction(async (tx) => {
+      await tx.propertyDocument.update({ where: { id: attachmentId }, data: { deletedAt: new Date() } })
+      await logAudit(tx, {
+        userId,
+        action: 'PROPERTY_ATTACHMENT_REMOVED',
+        entityType: 'Property',
+        entityId: id,
+        details: { attachmentId, kind: attachment.kind }
+      })
+    })
+    // Physical files are retained for history, matching the image archive flow.
+    res.json({ success: true, message: 'Attachment removed successfully' })
   } catch (error) {
     next(error)
   }

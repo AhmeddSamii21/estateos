@@ -42,6 +42,44 @@
       </div>
     </div>
 
+    <div v-if="isLeads" class="lead-filters">
+      <label>
+        <span>{{ store.isArabic ? 'المصدر' : 'Source' }}</span>
+        <input v-model="sourceFilter" type="text" maxlength="100" :placeholder="store.isArabic ? 'كل المصادر' : 'All sources'" list="lead-sources" />
+        <datalist id="lead-sources">
+          <option v-for="source in leadSources" :key="source" :value="source"></option>
+        </datalist>
+      </label>
+      <label>
+        <span>{{ store.isArabic ? 'الأولوية' : 'Priority' }}</span>
+        <select v-model="priorityFilter">
+          <option value="">{{ store.isArabic ? 'كل المستويات' : 'All tiers' }}</option>
+          <option v-for="tier in priorityTiers" :key="tier" :value="tier">{{ priorityLabel(tier) }}</option>
+        </select>
+      </label>
+      <label>
+        <span>{{ store.isArabic ? 'ميزانية من' : 'Budget min' }}</span>
+        <input v-model="budgetMinFilter" type="number" min="0" />
+      </label>
+      <label>
+        <span>{{ store.isArabic ? 'ميزانية إلى' : 'Budget max' }}</span>
+        <input v-model="budgetMaxFilter" type="number" min="0" />
+      </label>
+      <label>
+        <span>{{ store.isArabic ? 'الترتيب' : 'Sort' }}</span>
+        <select v-model="sortFilter">
+          <option value="priority_desc">{{ store.isArabic ? 'الأولوية: الأعلى أولًا' : 'Priority: high first' }}</option>
+          <option value="priority_asc">{{ store.isArabic ? 'الأولوية: الأقل أولًا' : 'Priority: low first' }}</option>
+          <option value="budget_desc">{{ store.isArabic ? 'الميزانية: الأعلى أولًا' : 'Budget: high first' }}</option>
+          <option value="newest">{{ store.isArabic ? 'الأحدث' : 'Newest' }}</option>
+          <option value="oldest">{{ store.isArabic ? 'الأقدم' : 'Oldest' }}</option>
+        </select>
+      </label>
+      <button type="button" class="btn btn-quiet" @click="clearLeadFilters">
+        {{ store.isArabic ? 'مسح الفلاتر' : 'Clear filters' }}
+      </button>
+    </div>
+
     <div v-if="conflictWarning" class="warning" role="alert">
       <strong>{{ conflictWarning.message }}</strong>
       <ul v-if="conflictWarning.conflicts?.length">
@@ -110,6 +148,14 @@
                     </small>
                   </span>
                 </template>
+                <template v-else-if="isLeads && column.key === 'priorityTier'">
+                  <span class="priority-pill" :class="`priority-${String(row[column.key] || 'MEDIUM').toLowerCase()}`">
+                    {{ priorityLabel(String(row[column.key] || 'MEDIUM')) }}
+                  </span>
+                </template>
+                <template v-else-if="isLeads && column.key === 'priorityScore'">
+                  <span class="priority-score">{{ row[column.key] ?? 0 }}</span>
+                </template>
                 <template v-else-if="isMaintenance && column.key === 'cost'">
                   <span class="expense-tag" :class="linkedExpenseId(row) ? 'linked' : 'none'">
                     {{ linkedExpenseLabel(row) }}
@@ -139,6 +185,11 @@
                 </button>
                 <button v-if="isLeads" type="button" class="link" @click="openFollowUp(row)">
                   {{ store.isArabic ? 'متابعة' : 'Follow up' }}
+                </button>
+                <button v-if="isLeads" type="button" class="link" :disabled="prioritySaving === String(row.id)" @click="recomputePriority(row)">
+                  {{ prioritySaving === String(row.id)
+                    ? (store.isArabic ? 'جارٍ الحساب…' : 'Recalculating…')
+                    : (store.isArabic ? 'إعادة حساب الأولوية' : 'Recalc priority') }}
                 </button>
                 <router-link v-if="isMaintenance && linkedExpenseId(row)" class="link" to="/finance/expenses">
                   {{ store.isArabic ? 'المصروف' : 'Expense' }}
@@ -314,6 +365,16 @@ const statusSaving = ref<string | null>(null)
 const exporting = ref(false)
 const statusFilter = ref('')
 const followUpFilter = ref('')
+const sourceFilter = ref('')
+const priorityFilter = ref('')
+const budgetMinFilter = ref('')
+const budgetMaxFilter = ref('')
+const sortFilter = ref('priority_desc')
+const prioritySaving = ref<string | null>(null)
+const priorityTiers = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const
+const leadSources = computed(() => Array.from(new Set(
+  rows.value.map((row) => String(row.source || '').trim()).filter(Boolean)
+)).sort((a, b) => a.localeCompare(b)))
 const followUpOpen = ref(false)
 const followUpLead = ref<Row | null>(null)
 const followUpBody = ref('')
@@ -375,9 +436,40 @@ const canDelete = computed(() => {
   return !allowed || allowed.includes(store.user.role)
 })
 
+function priorityLabel(tier: string): string {
+  if (tier === 'URGENT') return store.isArabic ? 'عاجل' : 'Urgent'
+  if (tier === 'HIGH') return store.isArabic ? 'مرتفع' : 'High'
+  if (tier === 'LOW') return store.isArabic ? 'منخفض' : 'Low'
+  return store.isArabic ? 'متوسط' : 'Medium'
+}
+
+function clearLeadFilters(): void {
+  sourceFilter.value = ''
+  priorityFilter.value = ''
+  budgetMinFilter.value = ''
+  budgetMaxFilter.value = ''
+  sortFilter.value = 'priority_desc'
+  followUpFilter.value = ''
+}
+
+async function recomputePriority(row: Row): Promise<void> {
+  prioritySaving.value = String(row.id)
+  try {
+    const response = await apiPost<Row>(`/leads/${row.id}/recompute-priority`, {})
+    if (response.data) rows.value = rows.value.map((item) => item.id === row.id ? { ...item, ...response.data } : item)
+  } catch (e) {
+    store.error = errorMessage(e)
+  } finally {
+    prioritySaving.value = null
+  }
+}
+
 watch(config, () => { void load() })
 watch(statusFilter, () => { void load() })
 watch(followUpFilter, () => { void load() })
+watch([sourceFilter, priorityFilter, budgetMinFilter, budgetMaxFilter, sortFilter], () => {
+  if (isLeads.value) void load()
+})
 
 onMounted(() => { void load(); applyQueryPrefill() })
 
@@ -386,7 +478,14 @@ async function load(): Promise<void> {
   try {
     const params: Record<string, string | number> = { limit: 100 }
     if (isDeals.value && statusFilter.value) params.status = statusFilter.value
-    if (isLeads.value && followUpFilter.value) params.followUp = followUpFilter.value
+    if (isLeads.value) {
+      if (followUpFilter.value) params.followUp = followUpFilter.value
+      if (sourceFilter.value.trim()) params.source = sourceFilter.value.trim()
+      if (priorityFilter.value) params.priority = priorityFilter.value
+      if (budgetMinFilter.value !== '') params.budgetMin = budgetMinFilter.value
+      if (budgetMaxFilter.value !== '') params.budgetMax = budgetMaxFilter.value
+      if (sortFilter.value) params.sort = sortFilter.value
+    }
     const response = await apiGet<Row[] | { data: Row[] }>(config.value.endpoint, { params })
     const payload = response.data
     rows.value = Array.isArray(payload) ? payload : (payload?.data ?? [])
@@ -814,6 +913,14 @@ h2 { margin: 0; font-size: 1.15rem; }
 .cost-value { color: #374151; }
 .stage-filter { display: inline-flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #374151; }
 .stage-filter select { padding: 0.4rem 0.5rem; font-size: 0.82rem; }
+.lead-filters { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0.7rem 0.8rem; margin-bottom: 0.9rem; }
+.lead-filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: #6b7280; }
+.lead-filters input, .lead-filters select { min-width: 130px; padding: 0.4rem 0.5rem; font-size: 0.82rem; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; color: #111827; }
+.priority-pill { display: inline-block; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.72rem; background: #f3f4f6; color: #4b5563; white-space: nowrap; }
+.priority-high { background: #fef3c7; color: #92400e; }
+.priority-urgent { background: #fee2e2; color: #991b1b; }
+.priority-low { background: #dcfce7; color: #166534; }
+.priority-score { font-variant-numeric: tabular-nums; }
 .record-link { color: #4f46e5; font-weight: 600; text-decoration: none; }
 .record-link:hover { text-decoration: underline; }
 .quick-status, .agenda-side select { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.3rem 0.4rem; font-size: 0.78rem; margin-inline-end: 0.35rem; }

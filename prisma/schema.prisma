@@ -129,6 +129,23 @@ enum DocumentStatus {
   ARCHIVED
 }
 
+// Package 14: property floorplans and brochures share the document table but
+// are distinguished by kind so existing document integrations stay unchanged.
+enum PropertyAttachmentKind {
+  OTHER
+  FLOORPLAN
+  BROCHURE
+}
+
+// Package 15: persisted lead priority tiers, derived from source, budget,
+// completeness, status and follow-up timing.
+enum LeadPriorityTier {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 enum MaintenancePriority {
   LOW
   MEDIUM
@@ -380,16 +397,25 @@ model PropertyImage {
 }
 
 model PropertyDocument {
-  id         String   @id @default(uuid())
-  propertyId String
-  name       String
-  url        String
-  mimeType   String?
-  createdAt  DateTime @default(now())
+  id           String                  @id @default(uuid())
+  propertyId   String
+  name         String
+  url          String
+  mimeType     String?
+  // Existing rows keep OTHER; new rows are explicitly FLOORPLAN or BROCHURE.
+  kind         PropertyAttachmentKind @default(OTHER)
+  storageKey   String?
+  originalName String?
+  size         Int?
+  sortOrder    Int                     @default(0)
+  deletedAt    DateTime?
+  createdAt    DateTime @default(now())
 
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
+  @@index([propertyId, deletedAt])
+  @@index([propertyId, kind])
 }
 
 model PropertyActivity {
@@ -428,6 +454,10 @@ model Lead {
   // Follow-up tracking: next scheduled touchpoint and most recent contact.
   nextFollowUpAt    DateTime?
   lastContactedAt   DateTime?
+  // Package 15: priority is recomputed on lead writes and can be recalculated
+  // on demand; the stored value powers filtering and sorting.
+  priorityScore     Int           @default(0)
+  priorityTier      LeadPriorityTier @default(MEDIUM)
   isActive          Boolean       @default(true)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -444,6 +474,9 @@ model Lead {
   @@index([propertyId])
   @@index([status])
   @@index([nextFollowUpAt])
+  @@index([priorityScore])
+  @@index([priorityTier])
+  @@index([source])
 }
 
 // Lightweight interaction log for calls and quick follow-up notes. The legacy

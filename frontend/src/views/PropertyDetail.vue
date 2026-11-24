@@ -157,6 +157,8 @@
         </div>
       </section>
 
+      <PropertyAttachmentsPanel :property-id="property.id" :can-edit="canEditProperty" />
+
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'الوثائق' : 'Documents' }}</h2>
@@ -210,6 +212,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
+import PropertyAttachmentsPanel from '@/components/PropertyAttachmentsPanel.vue'
 import { downloadDocument } from '@/utils/documents'
 import { loadPropertyImageObjectUrl } from '@/utils/propertyImages'
 import { buildClientPropertySummary } from '@/utils/propertyShare'

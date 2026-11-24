@@ -39,6 +39,22 @@
         </div>
       </section>
 
+      <section v-if="attachments.length" class="card">
+        <h3>{{ store.isArabic ? 'المخططات والكتيّبات' : 'Floorplans & brochures' }}</h3>
+        <div class="attachment-list">
+          <a
+            v-for="attachment in attachments"
+            :key="attachment.id"
+            :href="attachment.contentUrl || attachment.url"
+            target="_blank"
+            rel="noopener"
+          >
+            <i class="fas fa-file"></i>
+            {{ attachmentKindLabel(attachment.kind, store.isArabic) }} — {{ attachment.name || attachment.originalName }}
+          </a>
+        </div>
+      </section>
+
       <section class="card">
         <h3>{{ store.isArabic ? 'المواصفات' : 'Specifications' }}</h3>
         <dl class="facts">
@@ -77,6 +93,7 @@ import { useRoute } from 'vue-router'
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useStore } from '@/stores'
+import { attachmentKindLabel } from '@/utils/propertyAttachments'
 import type { PublicProperty } from '@/types'
 
 const route = useRoute()
@@ -94,6 +111,9 @@ const hasCoordinates = computed(() => {
   return Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)
 })
 const gallery = computed(() => [...(property.value?.images || [])].sort((a, b) => a.sortOrder - b.sortOrder))
+const attachments = computed(() => [...(property.value?.attachments || [])].sort((a, b) =>
+  String(a.kind).localeCompare(String(b.kind)) || a.sortOrder - b.sortOrder
+))
 
 onMounted(() => void load())
 
@@ -192,6 +212,9 @@ function formatDate(value: string | null): string {
 .gallery figure { margin: 0; }
 .gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #eef2ff; }
 .gallery figcaption { font-size: 0.76rem; color: #6b7280; padding-top: 0.3rem; }
+.attachment-list { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.attachment-list a { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid #c7d2fe; border-radius: 8px; padding: 0.5rem 0.75rem; color: #3730a3; text-decoration: none; font-size: 0.86rem; }
+.attachment-list a:hover { background: #eef2ff; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin: 0; }
 .facts dt { font-size: 0.75rem; color: #6b7280; }
 .facts dd { margin: 0.2rem 0 0; font-weight: 600; font-size: 0.92rem; }
