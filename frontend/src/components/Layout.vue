@@ -16,6 +16,9 @@
         <router-link to="/search" class="nav-link">
           <i class="fas fa-map-marked-alt"></i><span>{{ t('Search & Map') }}</span>
         </router-link>
+        <router-link to="/maps" class="nav-link">
+          <i class="fas fa-earth-africa"></i><span>{{ t('Availability map') }}</span>
+        </router-link>
         <router-link to="/leads" class="nav-link">
           <i class="fas fa-user-plus"></i><span>{{ t('Leads') }}</span>
         </router-link>
@@ -241,6 +244,8 @@ const ArabicLabels: Record<string, string> = {
   'Command palette': 'لوحة الأوامر',
   Properties: 'العقارات',
   'Search & Map': 'البحث والخريطة',
+  'Availability map': 'خريطة التوفر',
+  'Live availability map': 'خريطة التوفر المباشر',
   Leads: 'العملاء المحتملون',
   Appointments: 'المواعيد',
   Deals: 'الصفقات',

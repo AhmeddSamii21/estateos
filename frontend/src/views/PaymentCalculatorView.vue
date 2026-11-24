@@ -199,7 +199,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useStore } from '@/stores'
 import {
   INSTALLMENT_FREQUENCIES,
@@ -215,6 +216,7 @@ import type { BalloonInput, InstallmentFrequency, PaymentPlanInput, RateMode } f
 type DownPaymentMode = 'PERCENT' | 'AMOUNT'
 
 const store = useStore()
+const route = useRoute()
 const actionMessage = ref('')
 const form = reactive<{
   price: string
@@ -247,6 +249,18 @@ const form = reactive<{
 })
 
 const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
+
+// Package 44: the availability-map drawer jumps here with the selected unit price.
+onMounted(() => {
+  const price = route.query.price
+  if (typeof price === 'string' && Number.isFinite(Number(price)) && Number(price) > 0) {
+    form.price = price
+  }
+  const currency = route.query.currency
+  if (typeof currency === 'string' && currency.trim().length === 3) {
+    form.currency = currency.trim().toUpperCase()
+  }
+})
 
 const planInput = computed<PaymentPlanInput>(() => ({
   price: form.price,

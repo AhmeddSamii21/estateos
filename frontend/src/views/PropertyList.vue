@@ -209,7 +209,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ImportCsvModal from '@/components/ImportCsvModal.vue'
 import PropertyFilters from '@/components/PropertyFilters.vue'
@@ -230,6 +230,7 @@ import type { Property, PropertyFilters as Filters } from '@/types'
 
 const store = useStore()
 const router = useRouter()
+const route = useRoute()
 const page = ref(1)
 const selectionMode = ref(false)
 const selectedIds = ref<string[]>([])
@@ -283,6 +284,12 @@ const boardError = ref('')
 const transitioningId = ref<string | null>(null)
 
 onMounted(() => {
+  // Package 44: the live availability map can hand a unit to comparison.
+  const compareParam = route.query.compare
+  if (typeof compareParam === 'string' && compareParam) {
+    compareMode.value = true
+    compareIds.value = [compareParam]
+  }
   if (!store.allProperties.length) void store.fetchProperties({ page: 1, limit: 20 })
   if (store.canManage) void loadAgents()
 })

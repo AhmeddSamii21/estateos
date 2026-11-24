@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" role="img" aria-label="November Business Hub masterplan / مخطط مجمع نوفمبر للأعمال">
+  <rect width="1000" height="700" fill="#eef2ff"/>
+  <path d="M0 560 H1000 M120 0 V700 M880 0 V700" stroke="#fff" stroke-width="30"/>
+  <rect x="220" y="80" width="560" height="440" rx="20" fill="#dbe4ff" stroke="#8ea1e8" stroke-width="4"/>
+  <g fill="#4338ca">
+    <rect x="270" y="130" width="190" height="150" rx="8"/>
+    <rect x="500" y="130" width="230" height="150" rx="8"/>
+    <rect x="270" y="320" width="300" height="150" rx="8"/>
+    <rect x="610" y="320" width="120" height="150" rx="8"/>
+  </g>
+  <g font-family="sans-serif" font-size="24" fill="#312e81">
+    <text x="220" y="60">Tower 1 / البرج ١</text>
+    <text x="220" y="625">Business Hub / مجمع الأعمال</text>
+  </g>
+</svg>

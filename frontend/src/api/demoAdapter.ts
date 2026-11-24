@@ -21,6 +21,7 @@ import {
   type DemoDatabase,
   type DemoRow
 } from './demoData'
+import { buildAvailabilityMap } from '@/utils/liveMapCore.mjs'
 
 const TOKEN_KEY = 'estateos.token'
 
@@ -838,6 +839,16 @@ function handleDemoRequest(method: string, url: string, params: Params, body: an
       return { data: link }
     }
     if (second === 'status' && method === 'PATCH') { touch(property, { status: body?.status }); persist(); return { data: property } }
+    // Package 44: coordinate/masterplan pin update. Live map status changes
+    // reuse the existing /properties/:id/status route above.
+    if (third === 'coordinates' && method === 'PATCH') {
+      const fields = ['latitude', 'longitude', 'cityArea', 'masterplanImageUrl', 'mapX', 'mapY', 'unitLatitude', 'unitLongitude']
+      const patch: DemoRow = {}
+      for (const field of fields) if (body?.[field] !== undefined) patch[field] = body[field]
+      touch(property, patch)
+      persist()
+      return { data: property, message: 'Property coordinates updated successfully' }
+    }
     if (second === 'duplicate-draft') {
       const { id: _id, images: _images, attachments: _attachments, ...draft } = property
       return { data: { ...draft, title: `${property.title} (copy)`, referenceNumber: '' } }
@@ -1036,6 +1047,36 @@ function handleDemoRequest(method: string, url: string, params: Params, body: an
       const commission = database.commissions.find((row) => row.id === third)
       if (commission) { commission.status = body?.status || commission.status; persist() }
       return { data: commission || {} }
+    }
+  }
+
+  // -- Package 44: live availability maps -----------------------------------
+  if (root === 'maps') {
+    if (second === 'availability' && method === 'GET') {
+      const filters = {
+        project: params.project || '',
+        status: String(params.status || '').toUpperCase(),
+        type: String(params.type || '').toUpperCase(),
+        minPrice: params.minPrice === undefined || params.minPrice === '' ? undefined : Number(params.minPrice),
+        maxPrice: params.maxPrice === undefined || params.maxPrice === '' ? undefined : Number(params.maxPrice)
+      }
+      const result = buildAvailabilityMap(database.properties, {
+        language: params.language === 'ar' ? 'ar' : 'en',
+        filters
+      })
+      return {
+        data: {
+          ...result,
+          generatedAt: new Date().toISOString(),
+          filters: {
+            project: filters.project || null,
+            status: filters.status || null,
+            type: filters.type || null,
+            minPrice: filters.minPrice ?? null,
+            maxPrice: filters.maxPrice ?? null
+          }
+        }
+      }
     }
   }
 

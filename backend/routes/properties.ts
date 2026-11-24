@@ -810,6 +810,15 @@ router.post('/', async (req, res, next) => {
           // Package 34: comparison metadata, additive and optional.
           features: optionalString(req.body?.features, 'features', 2000),
           paymentTerms: optionalString(req.body?.paymentTerms, 'paymentTerms', 2000),
+          projectName: optionalString(req.body?.projectName, 'projectName', 120),
+          buildingName: optionalString(req.body?.buildingName, 'buildingName', 120),
+          unitNumber: optionalString(req.body?.unitNumber, 'unitNumber', 40),
+          cityArea: optionalString(req.body?.cityArea, 'cityArea', 120),
+          masterplanImageUrl: optionalString(req.body?.masterplanImageUrl, 'masterplanImageUrl', 1000),
+          mapX: numberValue(req.body?.mapX, 'mapX', { min: 0, max: 100 }),
+          mapY: numberValue(req.body?.mapY, 'mapY', { min: 0, max: 100 }),
+          unitLatitude: numberValue(req.body?.unitLatitude, 'unitLatitude', { min: -90, max: 90 }),
+          unitLongitude: numberValue(req.body?.unitLongitude, 'unitLongitude', { min: -180, max: 180 }),
           organizationId,
           ownerId,
           assignedAgentId,
@@ -849,6 +858,92 @@ router.post('/', async (req, res, next) => {
   }
 })
 
+/**
+ * Package 44: coordinate/masterplan pin updates. MANAGEMENT roles may edit any
+ * property in the tenant; TEAM_LEAD is limited to team/branch-visible rows.
+ * Client-supplied organization or visibility scope is never accepted.
+ */
+function nullableNumber(value: unknown, field: string, min: number, max: number): number | null {
+  if (value === null || value === '') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw createError(`${field} must be a number between ${min} and ${max}`, 400)
+  }
+  return parsed
+}
+
+function nullableText(value: unknown, field: string, max: number): string | null {
+  if (value === null || value === '') return null
+  if (typeof value !== 'string' || value.trim().length > max) {
+    throw createError(`${field} must be a string under ${max} characters`, 400)
+  }
+  return value.trim()
+}
+
+router.patch('/:id/coordinates', requireRole([...MANAGEMENT_ROLES, Role.TEAM_LEAD]), async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const id = String(req.params.id)
+    const existing = await prisma.property.findFirst({
+      where: { id, organizationId, deletedAt: null },
+      select: { id: true, assignedAgentId: true, teamId: true, branchId: true }
+    })
+    if (!existing) throw createError('Property not found', 404)
+    if (roleOf(req) === Role.TEAM_LEAD) {
+      const context = await visibility(req)
+      if (!canSee(context, existing, 'property')) {
+        throw createError('Insufficient permissions to update this property', 403)
+      }
+    }
+
+    const body = req.body as Record<string, unknown>
+    const fields = ['latitude', 'longitude', 'cityArea', 'masterplanImageUrl', 'mapX', 'mapY', 'unitLatitude', 'unitLongitude']
+    if (!fields.some((field) => body[field] !== undefined)) {
+      throw createError('At least one coordinate field is required', 400)
+    }
+    const data: Prisma.PropertyUpdateInput = {}
+    if (body.latitude !== undefined) data.latitude = nullableNumber(body.latitude, 'latitude', -90, 90)
+    if (body.longitude !== undefined) data.longitude = nullableNumber(body.longitude, 'longitude', -180, 180)
+    if (body.unitLatitude !== undefined) data.unitLatitude = nullableNumber(body.unitLatitude, 'unitLatitude', -90, 90)
+    if (body.unitLongitude !== undefined) data.unitLongitude = nullableNumber(body.unitLongitude, 'unitLongitude', -180, 180)
+    if (body.mapX !== undefined) data.mapX = nullableNumber(body.mapX, 'mapX', 0, 100)
+    if (body.mapY !== undefined) data.mapY = nullableNumber(body.mapY, 'mapY', 0, 100)
+    if (body.cityArea !== undefined) data.cityArea = nullableText(body.cityArea, 'cityArea', 120)
+    if (body.masterplanImageUrl !== undefined) data.masterplanImageUrl = nullableText(body.masterplanImageUrl, 'masterplanImageUrl', 1000)
+
+    const property = await prisma.$transaction(async (tx) => {
+      const saved = await tx.property.update({
+        where: { id },
+        data,
+        select: {
+          id: true,
+          projectName: true,
+          cityArea: true,
+          masterplanImageUrl: true,
+          latitude: true,
+          longitude: true,
+          mapX: true,
+          mapY: true,
+          unitLatitude: true,
+          unitLongitude: true
+        }
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'PROPERTY_COORDINATES_UPDATED',
+        entityType: 'Property',
+        entityId: id,
+        details: data as Record<string, unknown>
+      })
+      return saved
+    })
+    res.json({ success: true, data: property, message: 'Property coordinates updated successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.patch('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
@@ -882,11 +977,19 @@ router.patch('/:id', async (req, res, next) => {
         : enumValue(body.occupancyStatus, 'occupancyStatus', Object.values(OccupancyStatus))
       changes.occupancyStatus = { before: existing.occupancyStatus, after: body.occupancyStatus }
     }
-    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'operationalNotes', 'features', 'paymentTerms']) {
+    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'operationalNotes', 'features', 'paymentTerms', 'cityArea', 'masterplanImageUrl']) {
       if (body[field] !== undefined) {
-        const maxLength = field === 'operationalNotes' ? 5000 : ['features', 'paymentTerms'].includes(field) ? 2000 : 500
+        const maxLength = field === 'operationalNotes' ? 5000 : ['features', 'paymentTerms'].includes(field) ? 2000 : field === 'masterplanImageUrl' ? 1000 : 500
         data[field as 'city'] = optionalString(body[field], field, maxLength)
         changes[field] = { before: (existing as unknown as Record<string, unknown>)[field] ?? null, after: body[field] }
+      }
+    }
+    for (const field of ['mapX', 'mapY', 'unitLatitude', 'unitLongitude']) {
+      if (body[field] !== undefined) {
+        const bounds = field === 'mapX' || field === 'mapY'
+          ? { min: 0, max: 100 }
+          : field === 'unitLatitude' ? { min: -90, max: 90 } : { min: -180, max: 180 }
+        data[field as 'price'] = numberValue(body[field], field, bounds) as number
       }
     }
     const nextCurrency = body.currency !== undefined

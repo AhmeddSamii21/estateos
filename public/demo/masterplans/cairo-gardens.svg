@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" role="img" aria-label="Cairo Gardens Residence masterplan / مخطط حديقة القاهرة">
+  <rect width="1000" height="700" fill="#ecfdf5"/>
+  <path d="M0 350 H1000 M330 0 V700 M700 0 V700" stroke="#fff" stroke-width="28"/>
+  <g fill="#a7f3d0" stroke="#34d399" stroke-width="3">
+    <rect x="70" y="70" width="210" height="220" rx="14"/>
+    <rect x="390" y="70" width="250" height="220" rx="14"/>
+    <rect x="760" y="70" width="180" height="220" rx="14"/>
+    <rect x="70" y="420" width="210" height="220" rx="14"/>
+    <rect x="390" y="420" width="250" height="220" rx="14"/>
+    <rect x="760" y="420" width="180" height="220" rx="14"/>
+  </g>
+  <g fill="#059669">
+    <circle cx="175" cy="180" r="34"/><circle cx="515" cy="180" r="34"/><circle cx="850" cy="180" r="34"/>
+    <circle cx="175" cy="530" r="34"/><circle cx="515" cy="530" r="34"/><circle cx="850" cy="530" r="34"/>
+  </g>
+  <g font-family="sans-serif" font-size="24" fill="#065f46">
+    <text x="70" y="55">Cairo Gardens / حديقة القاهرة</text>
+    <text x="70" y="685">Fifth Settlement / التجمع الخامس</text>
+  </g>
+</svg>

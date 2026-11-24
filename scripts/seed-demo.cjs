@@ -301,6 +301,12 @@ async function main() {
         country: 'Egypt',
         latitude: 30.0197,
         longitude: 31.0089,
+        cityArea: 'Compound 778, Sheikh Zayed / مجمع ٧٧٨، الشيخ زايد',
+        masterplanImageUrl: '/demo/masterplans/skyline-residence.svg',
+        mapX: 32.5,
+        mapY: 28,
+        unitLatitude: 30.0199,
+        unitLongitude: 31.0092,
         area: 168,
         areaUnit: AreaUnit.SQ_M,
         bedrooms: 3,
@@ -336,6 +342,12 @@ async function main() {
         country: 'Egypt',
         latitude: 30.0102,
         longitude: 31.0174,
+        cityArea: 'Palm Valley, Sheikh Zayed / وادي النخيل، الشيخ زايد',
+        masterplanImageUrl: '/demo/masterplans/skyline-residence.svg',
+        mapX: 68,
+        mapY: 61.5,
+        unitLatitude: 30.0104,
+        unitLongitude: 31.0177,
         area: 245,
         areaUnit: AreaUnit.SQ_M,
         bedrooms: 4,
@@ -370,6 +382,12 @@ async function main() {
         country: 'Egypt',
         latitude: 29.9336,
         longitude: 31.0925,
+        cityArea: 'November 6th Axis, 6th of October / محور ٦ نوفمبر، السادس من أكتوبر',
+        masterplanImageUrl: '/demo/masterplans/november-business-hub.svg',
+        mapX: 45,
+        mapY: 52,
+        unitLatitude: 29.9338,
+        unitLongitude: 31.0928,
         area: 82,
         areaUnit: AreaUnit.SQ_M,
         bedrooms: 0,
@@ -402,6 +420,12 @@ async function main() {
         country: 'Egypt',
         latitude: 29.9108,
         longitude: 31.0798,
+        cityArea: 'Green Garden, 6th of October / الحديقة الخضراء، السادس من أكتوبر',
+        masterplanImageUrl: '/demo/masterplans/october-family-villas.svg',
+        mapX: 55,
+        mapY: 40,
+        unitLatitude: 29.9111,
+        unitLongitude: 31.0801,
         area: 410,
         areaUnit: AreaUnit.SQ_M,
         bedrooms: 5,
@@ -486,6 +510,104 @@ async function main() {
     }
     for (const [id, meta] of Object.entries(unitMeta)) {
       await tx.property.update({ where: { id }, data: meta })
+    }
+
+    // Package 44: enrich the existing demo properties in place so databases
+    // seeded before maps existed gain pins without changing record counts.
+    const mapMeta = {
+      'demo-property-sz-001': {
+        cityArea: 'Compound 778, Sheikh Zayed / مجمع ٧٧٨، الشيخ زايد',
+        masterplanImageUrl: '/demo/masterplans/skyline-residence.svg',
+        mapX: 32.5, mapY: 28,
+        unitLatitude: 30.0199, unitLongitude: 31.0092
+      },
+      'demo-property-sz-002': {
+        cityArea: 'Palm Valley, Sheikh Zayed / وادي النخيل، الشيخ زايد',
+        masterplanImageUrl: '/demo/masterplans/skyline-residence.svg',
+        mapX: 68, mapY: 61.5,
+        unitLatitude: 30.0104, unitLongitude: 31.0177
+      },
+      'demo-property-oct-001': {
+        cityArea: 'November 6th Axis, 6th of October / محور ٦ نوفمبر، السادس من أكتوبر',
+        masterplanImageUrl: '/demo/masterplans/november-business-hub.svg',
+        mapX: 45, mapY: 52,
+        unitLatitude: 29.9338, unitLongitude: 31.0928
+      },
+      'demo-property-oct-002': {
+        cityArea: 'Green Garden, 6th of October / الحديقة الخضراء، السادس من أكتوبر',
+        masterplanImageUrl: '/demo/masterplans/october-family-villas.svg',
+        mapX: 55, mapY: 40,
+        unitLatitude: 29.9111, unitLongitude: 31.0801
+      }
+    }
+    for (const [id, meta] of Object.entries(mapMeta)) {
+      await tx.property.update({ where: { id }, data: meta })
+    }
+
+    // Package 44: two additional development pins extend the map walkthrough
+    // to New Cairo and the North Coast. Non-`demo-` ids intentionally keep
+    // Package 24's original demo record counts unchanged.
+    const mapDevelopments = [
+      {
+        id: 'pkg44-map-newcairo-001',
+        referenceNumber: 'PKG44-NC-001',
+        title: 'Cairo Gardens Residence — حديقة القاهرة',
+        city: 'New Cairo',
+        cityArea: 'Fifth Settlement, New Cairo / التجمع الخامس، القاهرة الجديدة',
+        latitude: 30.0259,
+        longitude: 31.4912,
+        unitLatitude: 30.0262,
+        unitLongitude: 31.4915,
+        mapX: 38,
+        mapY: 44,
+        masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg',
+        projectName: 'Cairo Gardens Residence',
+        buildingName: 'Block C',
+        unitNumber: 'CG-C-301',
+        price: 5_400_000,
+        status: PropertyStatus.AVAILABLE
+      },
+      {
+        id: 'pkg44-map-northcoast-001',
+        referenceNumber: 'PKG44-NC-002',
+        title: 'Marina Village Chalet — شاليه قرية المارينا',
+        city: 'North Coast',
+        cityArea: 'Sidi Abdel Rahman, North Coast / سيدي عبد الرحمن، الساحل الشمالي',
+        latitude: 30.9865,
+        longitude: 28.8115,
+        unitLatitude: 30.9868,
+        unitLongitude: 28.8119,
+        mapX: 62,
+        mapY: 35,
+        masterplanImageUrl: '/demo/masterplans/north-coast-marina.svg',
+        projectName: 'North Coast Marina Village',
+        buildingName: 'Marina 4',
+        unitNumber: 'MV-4-12',
+        price: 3_250_000,
+        status: PropertyStatus.RESERVED
+      }
+    ]
+    for (const development of mapDevelopments) {
+      await upsertById(tx.property, development.id, {
+        organizationId: organization.id,
+        description: 'EN: Live availability map sample development. AR: مشروع تجريبي لخريطة التوفر المباشر.',
+        type: PropertyType.APARTMENT,
+        classification: PropertyClassification.SALE,
+        address: development.cityArea,
+        state: development.city,
+        country: 'Egypt',
+        area: 175,
+        areaUnit: AreaUnit.SQ_M,
+        bedrooms: 3,
+        bathrooms: 2,
+        floors: 3,
+        yearBuilt: 2024,
+        condition: PropertyCondition.EXCELLENT,
+        currency: 'EGP',
+        assignedAgentId: agent.id,
+        createdAt: daysFromNow(-3),
+        ...development
+      })
     }
 
     const leadSpecs = [

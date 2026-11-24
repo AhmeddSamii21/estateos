@@ -619,6 +619,15 @@ model Property {
   projectName     String?
   buildingName    String?
   unitNumber      String?
+  // Package 44: live availability maps. A property row doubles as a
+  // development/compound record (latitude/longitude/cityArea/masterplan) and
+  // as an individual unit with its own optional geo or relative pin position.
+  cityArea        String?
+  masterplanImageUrl String?
+  mapX            Decimal?  @db.Decimal(7, 4)
+  mapY            Decimal?  @db.Decimal(7, 4)
+  unitLatitude    Decimal?  @db.Decimal(10, 7)
+  unitLongitude   Decimal?  @db.Decimal(10, 7)
   saleRentRatio   Decimal?  @db.Decimal(12, 2)
   isActive        Boolean   @default(true)
   deletedAt       DateTime?
@@ -659,7 +668,9 @@ model Property {
   @@index([assignedAgentId])
   @@index([branchId])
   @@index([teamId])
+  @@index([organizationId, projectName])
   @@index([city])
+  @@index([cityArea])
   @@index([status])
   @@index([type])
   @@index([price])

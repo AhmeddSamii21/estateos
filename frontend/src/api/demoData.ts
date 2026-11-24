@@ -89,6 +89,36 @@ const propertySeeds: Array<Array<string | number>> = [
   ['Investment Shop', 'COMMERCIAL', 'OFF_MARKET', 'Cairo', 'Heliopolis', 'USD', 180000, 0, 1, 85, 'High footfall, corner unit | حركة مرور عالية، واجهة', 'Owner financing | تمويل من المالك', 'COMMERCIAL']
 ]
 
+/**
+ * Package 44: per-property development and unit pin metadata. Coordinates
+ * cover Greater Cairo, Sheikh Zayed, 6th of October, New Cairo and the North
+ * Coast so the live availability map is useful without any network tiles.
+ */
+const mapSeeds: Array<{
+  projectName: string
+  buildingName: string
+  unitNumber: string
+  cityArea: string
+  latitude: number
+  longitude: number
+  mapX: number
+  mapY: number
+  masterplanImageUrl: string
+}> = [
+  { projectName: 'Cairo Gardens Residence', buildingName: 'Block C', unitNumber: 'CG-C-301', cityArea: 'Fifth Settlement / التجمع الخامس', latitude: 30.0259, longitude: 31.4912, mapX: 38, mapY: 44, masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg' },
+  { projectName: 'Skyline Residence', buildingName: 'Tower A', unitNumber: 'SZ-A-101', cityArea: 'Zamalek, Greater Cairo / الزمالك، القاهرة الكبرى', latitude: 30.0626, longitude: 31.2224, mapX: 28, mapY: 32, masterplanImageUrl: '/demo/masterplans/skyline-residence.svg' },
+  { projectName: 'Palm Valley Residence', buildingName: 'Block 2', unitNumber: 'PV-2-14', cityArea: '6th of October / السادس من أكتوبر', latitude: 29.9336, longitude: 31.0925, mapX: 62, mapY: 55, masterplanImageUrl: '/demo/masterplans/october-family-villas.svg' },
+  { projectName: 'North Coast Marina Village', buildingName: 'Marina 3', unitNumber: 'MV-3-08', cityArea: 'Sidi Abdel Rahman, North Coast / سيدي عبد الرحمن، الساحل الشمالي', latitude: 30.9865, longitude: 28.8115, mapX: 45, mapY: 38, masterplanImageUrl: '/demo/masterplans/north-coast-marina.svg' },
+  { projectName: 'November Business Hub', buildingName: 'Tower 1', unitNumber: 'OFF-82', cityArea: 'November 6th Axis / محور ٦ نوفمبر', latitude: 30.0444, longitude: 31.2357, mapX: 52, mapY: 50, masterplanImageUrl: '/demo/masterplans/november-business-hub.svg' },
+  { projectName: 'Nile View Compound', buildingName: 'Building 4', unitNumber: 'NV-4-22', cityArea: 'Maadi, Greater Cairo / المعادي، القاهرة الكبرى', latitude: 29.9602, longitude: 31.2759, mapX: 70, mapY: 26, masterplanImageUrl: '/demo/masterplans/skyline-residence.svg' },
+  { projectName: 'Skyline Residence', buildingName: 'Block B', unitNumber: 'SZ-B-201', cityArea: 'Sheikh Zayed / الشيخ زايد', latitude: 30.0197, longitude: 31.0089, mapX: 66, mapY: 62, masterplanImageUrl: '/demo/masterplans/skyline-residence.svg' },
+  { projectName: 'Downtown Towers', buildingName: 'Tower 7', unitNumber: 'DT-7-12', cityArea: 'Downtown / وسط المدينة', latitude: 25.1972, longitude: 55.2744, mapX: 40, mapY: 47, masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg' },
+  { projectName: 'Al Malqa Land', buildingName: 'Plot 9', unitNumber: 'LM-9', cityArea: 'Al Malqa / الملقا', latitude: 24.8067, longitude: 46.6094, mapX: 55, mapY: 60, masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg' },
+  { projectName: 'North Coast Marina Village', buildingName: 'Marina 4', unitNumber: 'MV-4-12', cityArea: 'Sidi Abdel Rahman / سيدي عبد الرحمن', latitude: 30.9865, longitude: 28.8115, mapX: 62, mapY: 35, masterplanImageUrl: '/demo/masterplans/north-coast-marina.svg' },
+  { projectName: 'Business Bay Lofts', buildingName: 'Block B', unitNumber: 'BB-B-09', cityArea: 'Business Bay / الخليج التجاري', latitude: 25.1855, longitude: 55.2648, mapX: 33, mapY: 58, masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg' },
+  { projectName: 'Heliopolis Corner', buildingName: 'Street 9', unitNumber: 'HC-9', cityArea: 'Heliopolis / مصر الجديدة', latitude: 30.0818, longitude: 31.3155, mapX: 47, mapY: 41, masterplanImageUrl: '/demo/masterplans/november-business-hub.svg' }
+]
+
 const leadSeeds: Array<Array<string | number>> = [
   ['Mohamed', 'Aly', 'NEW', 'Website', 'APARTMENT', 180000, 320000, 'Cairo', 'CONTACTED', 'URGENT'],
   ['Sara', 'Eldin', 'CONTACTED', 'Referral', 'VILLA', 400000, 700000, 'Giza', 'QUALIFIED', 'URGENT'],
@@ -118,6 +148,7 @@ function buildProperties(): DemoRow[] {
   return propertySeeds.map((seed, index) => {
     const [title, type, status, city, address, currency, price, bedrooms, bathrooms, area, features, paymentTerms, classification] = seed
     const hue = (index * 47 + 190) % 360
+    const map = mapSeeds[index % mapSeeds.length]
     return {
       id: `demo-property-${index + 1}`,
       referenceNumber: `EST-${String(1042 + index)}`,
@@ -130,8 +161,18 @@ function buildProperties(): DemoRow[] {
       state: address,
       country: city === 'Dubai' ? 'UAE' : city === 'Riyadh' ? 'Saudi Arabia' : 'Egypt',
       postalCode: String(11000 + index * 37),
-      latitude: 30.0 + index * 0.12,
-      longitude: 31.2 + index * 0.15,
+      latitude: map.latitude,
+      longitude: map.longitude,
+      // Package 44: project-level masterplan identity and per-unit pin position.
+      projectName: map.projectName,
+      buildingName: map.buildingName,
+      unitNumber: map.unitNumber,
+      cityArea: map.cityArea,
+      masterplanImageUrl: map.masterplanImageUrl,
+      mapX: map.mapX,
+      mapY: map.mapY,
+      unitLatitude: Number((map.latitude + ((index % 3) - 1) * 0.00035).toFixed(6)),
+      unitLongitude: Number((map.longitude + (index % 2 ? 0.0004 : -0.0004)).toFixed(6)),
       area, areaUnit: 'SQ_M',
       bedrooms, bathrooms, floors: bedrooms ? 2 : 1,
       yearBuilt: 2014 + (index % 11),
@@ -696,7 +737,21 @@ export function loadDemoDatabase(): DemoDatabase {
     const raw = localStorage.getItem(DEMO_STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as DemoDatabase
-      if (parsed && Array.isArray(parsed.properties) && Array.isArray(parsed.users)) return parsed
+      if (parsed && Array.isArray(parsed.properties) && Array.isArray(parsed.users)) {
+        // Package 44: enrich demo databases saved before map support without
+        // overwriting any edits made during the current demo session.
+        const fresh = createDemoDatabase()
+        const seeds = new Map(fresh.properties.map((property) => [property.id, property]))
+        for (const property of parsed.properties) {
+          const seed = seeds.get(property.id)
+          if (seed && property.mapX === undefined) {
+            for (const field of ['projectName', 'buildingName', 'unitNumber', 'cityArea', 'masterplanImageUrl', 'mapX', 'mapY', 'unitLatitude', 'unitLongitude']) {
+              property[field] = seed[field]
+            }
+          }
+        }
+        return parsed
+      }
     }
   } catch {
     // Corrupt demo state should never break the live demo.

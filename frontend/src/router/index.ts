@@ -44,6 +44,7 @@ const routes = [
       { path: 'quotas', name: 'Quotas', component: () => import('@/views/QuotasView.vue'), meta: { title: 'Plan & usage quotas' } },
       { path: 'follow-ups', name: 'FollowUpAutomation', component: () => import('@/views/FollowUpAutomationView.vue'), meta: { title: 'Follow-up automation' } },
       { path: 'inventory', name: 'UnitInventory', component: () => import('@/views/UnitInventoryView.vue'), meta: { title: 'Unit inventory' } },
+      { path: 'maps', name: 'LiveAvailabilityMap', component: () => import('@/views/LiveAvailabilityMapView.vue'), meta: { title: 'Live availability map' } },
       { path: 'notifications', name: 'Notifications', component: () => import('@/views/NotificationsView.vue'), meta: { title: 'Notifications' } },
       { path: 'activity', name: 'Activity', component: () => import('@/views/ActivityView.vue'), meta: { title: 'Activity' } },
       { path: 'users', name: 'Users', component: () => import('@/views/ResourceView.vue'), props: { resource: 'users' }, meta: { title: 'Users', roles: ['ADMIN', 'MANAGER', 'TEAM_LEAD'] } },

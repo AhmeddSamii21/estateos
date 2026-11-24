@@ -33,6 +33,7 @@ import brandingRoutes from './routes/branding'
 import quotaRoutes from './routes/quotas'
 import followUpRoutes from './routes/followUps'
 import inventoryRoutes from './routes/inventory'
+import mapRoutes from './routes/maps'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
@@ -162,6 +163,7 @@ app.use('/api/branding', brandingRoutes)
 app.use('/api/quotas', quotaRoutes)
 app.use('/api/follow-ups', followUpRoutes)
 app.use('/api/inventory', inventoryRoutes)
+app.use('/api/maps', mapRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

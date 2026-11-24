@@ -17,6 +17,7 @@ EstateOS is a full-stack, organization-scoped platform for agencies and property
 
 - **CRM & Lead Scoring** — Lead records with seven matching criteria, scored property matches, priority tiers, follow-up buckets and automation rules, bilingual WhatsApp handoff links, and a validated CSV import wizard with preview and error reports.
 - **Property Inventory & Stacking Grid** — Property CRUD, status board, gallery and document attachments, advanced search with Leaflet map filtering, side-by-side comparison, and a visual unit inventory grid grouped by project, building and floor.
+- **Live Availability Maps & Masterplan** — `/maps` shows live available/reserved/sold counts, prices and unit pins on an interactive Leaflet map or a project masterplan overlay, with Map / Stacking Grid / List views, project/status/type/price filters, a unit drawer with instant status updates, pin editing, and jump-off links to the installment simulator and property comparison. Works fully offline in standalone demo mode.
 - **Deals & Installment Simulator** — Forward-only deal workflow with closing checklists and guarded transitions, installment schedules, interactive installment/mortgage simulator with bilingual amortization, payments with aging buckets, and historical FX snapshots.
 - **Owner & Client Portals** — Revocable read-only owner portfolio links and tenant-scoped client portal views backed by allow-listed fields for deals, payments and documents.
 - **Commissions & Referrals** — Decimal commission math and statements, owner payouts, referral partners with snapshotted per-deal splits, and a role-aware sales quota leaderboard.
@@ -60,7 +61,7 @@ Demo user passwords come from `DEMO_SEED_PASSWORD` (default shown above) and can
 
 **URL:** <https://ahmeddsamii21.github.io/estateos/>
 
-The deployed site is a standalone, interactive demo: no API server or PostgreSQL database is required. It ships with deterministic sample data for leads, properties, the unit inventory grid, deals, payments, commissions, referrals, contracts, notifications, owner/client portals, leaderboards and settings. Every module is navigable and edits persist in the browser's `localStorage` until you choose **Reset demo data**.
+The deployed site is a standalone, interactive demo: no API server or PostgreSQL database is required. It ships with deterministic sample data for leads, properties, the live availability map and masterplan pins, the unit inventory grid, deals, payments, commissions, referrals, contracts, notifications, owner/client portals, leaderboards and settings. Every module is navigable and edits persist in the browser's `localStorage` until you choose **Reset demo data**.
 
 On the sign-in screen, pick a role button for one-click access, or use the prefilled credentials:
 
