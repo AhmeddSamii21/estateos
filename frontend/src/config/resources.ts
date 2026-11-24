@@ -231,6 +231,7 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'cost', label: 'Cost', type: 'number' },
       { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
       { key: 'dueAt', label: 'Due at', type: 'date' },
+      { key: 'recurrenceInterval', label: 'Recurrence', type: 'select', options: ['NONE', 'MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL'], default: 'NONE' },
       { key: 'notes', label: 'Notes', type: 'textarea' }
     ],
     columns: [
@@ -239,7 +240,8 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'priority', label: 'Priority' },
       { key: 'status', label: 'Status' },
       { key: 'cost', label: 'Cost', money: true },
-      { key: 'dueAt', label: 'Due', date: true }
+      { key: 'dueAt', label: 'Due', date: true },
+      { key: 'nextDueAt', label: 'Next due', date: true }
     ],
     deletable: true,
     deletableRoles: ['ADMIN', 'MANAGER']

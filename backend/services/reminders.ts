@@ -1,4 +1,4 @@
-﻿import { AppointmentStatus, DealStatus, DealType, LeadStatus, PaymentStatus } from '@prisma/client'
+﻿import { AppointmentStatus, DealStatus, DealType, LeadStatus, MaintenanceRecurrenceInterval, MaintenanceStatus, PaymentStatus } from '@prisma/client'
 import { prisma } from '../prisma'
 import { createNotifications, organizationRecipientIds, type NotificationInput } from './notifications'
 import { leadScope } from '../utils/scope'
@@ -27,6 +27,7 @@ export interface ReminderRunResult {
   appointmentReminders: number
   leadFollowUpReminders: number
   leaseRenewalReminders: number
+  maintenanceReminders: number
 }
 
 export interface ReminderRunOptions {
@@ -71,7 +72,8 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
     paymentReminders: 0,
     appointmentReminders: 0,
     leadFollowUpReminders: 0,
-    leaseRenewalReminders: 0
+    leaseRenewalReminders: 0,
+    maintenanceReminders: 0
   }
 
   const organizations = await prisma.organization.findMany({
@@ -307,6 +309,55 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
       })), todayKey)
       result.leaseRenewalReminders += created
     }
+
+    // 5) Recurring maintenance cycles that are due or overdue. Dedupe is per
+    // request/day, so a scheduler retry never produces a second reminder.
+    const recurring = await prisma.maintenanceRequest.findMany({
+      where: {
+        organizationId: org.id,
+        deletedAt: null,
+        status: { in: [MaintenanceStatus.OPEN, MaintenanceStatus.IN_PROGRESS] },
+        recurrenceInterval: { not: MaintenanceRecurrenceInterval.NONE },
+        OR: [
+          { nextDueAt: { not: null, lte: endOfToday } },
+          { nextDueAt: null, dueAt: { not: null, lte: endOfToday } }
+        ]
+      },
+      select: {
+        id: true,
+        title: true,
+        dueAt: true,
+        nextDueAt: true,
+        assignedToId: true,
+        recurrenceInterval: true
+      },
+      take: 500
+    })
+
+    for (const request of recurring) {
+      const dueAt = request.nextDueAt ?? request.dueAt
+      if (!dueAt) continue
+      const overdue = isOverdue(dueAt, now)
+      if (!overdue && dueAt.getTime() >= endOfToday.getTime()) continue
+      const recipients = await organizationRecipientIds(prisma, org.id, {
+        roles: ['ADMIN', 'MANAGER'],
+        includeUserIds: request.assignedToId ? [request.assignedToId] : []
+      })
+      if (!recipients.length) continue
+      const dueDate = toDayKey(dueAt)
+      const created = await createDailyReminders(recipients.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: overdue ? 'MAINTENANCE_RECURRING_OVERDUE_REMINDER' : 'MAINTENANCE_RECURRING_DUE_REMINDER',
+        title: overdue ? 'Recurring maintenance overdue' : 'Recurring maintenance due',
+        message: `${request.title || 'Maintenance'} (${request.recurrenceInterval.toLowerCase()}) is ${overdue ? 'overdue' : 'due'} on ${dueDate}.`,
+        entityType: 'MaintenanceRequest',
+        entityId: request.id,
+        actionUrl: `/maintenance/${request.id}`,
+        metadata: { reminderDay: todayKey, kind: overdue ? 'overdue' : 'due', dueDate }
+      })), todayKey)
+      result.maintenanceReminders += created
+    }
   }
 
   return result
@@ -322,7 +373,7 @@ async function runSafely(label: string) {
   try {
     const res = await runReminders(new Date())
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders}`)
+      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders} maintenance=${res.maintenanceReminders}`)
     }
   } catch (err) {
     console.error(`[reminders] ${label} failed`, err)

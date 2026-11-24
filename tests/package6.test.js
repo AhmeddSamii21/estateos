@@ -186,6 +186,8 @@ const fakePrisma = {
   organization: { findMany: async () => [{ id: 'org' }] },
   payment: { findMany: async () => [] },
   appointment: { findMany: async () => [] },
+  // Package 18 added recurring-maintenance reminders; this stub has no cycles.
+  maintenanceRequest: { findMany: async () => [] },
   user: { findMany: async () => [{ id: 'manager' }] },
   lead: {
     findMany: async () => [

@@ -164,6 +164,23 @@ enum MaintenanceStatus {
   CANCELLED
 }
 
+// Package 18: recurring maintenance cycles. NONE preserves every legacy row;
+// completed recurring rows spawn the next cycle with a fresh due date.
+enum MaintenanceRecurrenceInterval {
+  NONE
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUAL
+}
+
+// Package 18: owner payouts are tracked separately from owner statements so
+// historical statement figures remain unchanged when a payout is settled.
+enum OwnerPayoutStatus {
+  PENDING
+  SETTLED
+  CANCELLED
+}
+
 enum OccupancyStatus {
   VACANT
   OWNER_OCCUPIED
@@ -195,6 +212,7 @@ model Organization {
   currencies    Currency[]
   exchangeRates ExchangeRate[]
   documents     Document[]
+  ownerPayouts  OwnerPayout[]
   maintenanceRequests MaintenanceRequest[]
   notifications Notification[]
 }
@@ -300,10 +318,39 @@ model Owner {
   organization   Organization? @relation(fields: [organizationId], references: [id])
   properties     Property[]
   documents      Document[]
+  payouts        OwnerPayout[]
 
   @@index([organizationId])
   @@index([email])
   @@index([isActive, deletedAt])
+}
+
+// Package 18: one settlement record per payout. Payouts never mutate the
+// underlying deals, payments or expenses used to calculate the statement.
+model OwnerPayout {
+  id             String            @id @default(uuid())
+  organizationId String
+  ownerId        String
+  amount         Decimal           @db.Decimal(14, 2)
+  currency       String            @default("USD")
+  status         OwnerPayoutStatus @default(PENDING)
+  reference      String?
+  notes          String?
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  settledAt      DateTime?
+  settledById    String?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+
+  owner          Owner             @relation(fields: [ownerId], references: [id])
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([ownerId, status])
+  @@index([createdAt])
 }
 
 model Property {
@@ -787,6 +834,9 @@ model MaintenanceRequest {
   currency       String             @default("USD")
   dueAt          DateTime?
   completedAt    DateTime?
+  recurrenceInterval MaintenanceRecurrenceInterval @default(NONE)
+  nextDueAt      DateTime?
+  recurrenceSourceId String?
   notes          String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -803,4 +853,6 @@ model MaintenanceRequest {
   @@index([status])
   @@index([priority])
   @@index([createdAt])
+  @@index([nextDueAt])
+  @@index([recurrenceInterval])
 }

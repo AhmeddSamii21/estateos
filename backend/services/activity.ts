@@ -28,13 +28,14 @@ export const ACTIVITY_ENTITY_TYPES = [
   'Appointment',
   'MaintenanceRequest',
   'Document',
-  'Commission'
+  'Commission',
+  'OwnerPayout'
 ] as const
 
 export type ActivityEntityType = (typeof ACTIVITY_ENTITY_TYPES)[number]
 export type ActivityViewer = { id: string; role: Role; organizationId: string }
 
-const FINANCE_ENTITY_TYPES: ActivityEntityType[] = ['Payment', 'Expense', 'Commission']
+const FINANCE_ENTITY_TYPES: ActivityEntityType[] = ['Payment', 'Expense', 'Commission', 'OwnerPayout']
 
 export interface ActivityEntityInfo {
   id: string
@@ -393,6 +394,32 @@ export async function loadAccessibleEntities(
         href: '/finance/commissions'
       }))
     }
+    case 'OwnerPayout': {
+      if (!isFinanceRole(viewer)) return []
+      const rows = await prisma.ownerPayout.findMany({
+        where: {
+          id: { in: uniqueIds },
+          organizationId: org,
+          deletedAt: null,
+          owner: ownerReadScope(org)
+        },
+        take: 200,
+        select: {
+          id: true,
+          status: true,
+          currency: true,
+          amount: true,
+          reference: true,
+          owner: { select: { firstName: true, lastName: true, companyName: true } }
+        }
+      })
+      return rows.map((row) => ({
+        id: row.id,
+        label: row.reference || labelOf([row.owner.companyName, row.owner.firstName, row.owner.lastName], 'Owner payout'),
+        meta: { status: row.status, currency: row.currency, amount: row.amount.toString(), archived: false },
+        href: '/owners'
+      }))
+    }
   }
 }
 
@@ -441,6 +468,8 @@ export interface ActivityFilters {
   entityType?: ActivityEntityType
   action?: string
   userId?: string
+  /** Actor search results, always restricted to the viewer's organization. */
+  userIds?: string[]
   from?: Date
   to?: Date
 }
@@ -455,6 +484,7 @@ function baseWhere(viewer: ActivityViewer, filters: ActivityFilters): Prisma.Aud
   if (filters.entityType) conditions.push({ entityType: filters.entityType })
   if (filters.action) conditions.push({ action: filters.action })
   if (filters.userId) conditions.push({ userId: filters.userId })
+  if (filters.userIds) conditions.push({ userId: { in: filters.userIds } })
   if (filters.from || filters.to) {
     conditions.push({
       createdAt: {
@@ -575,6 +605,30 @@ export async function listGlobalActivity(
   }
 
   return { data: result, nextCursor }
+}
+
+/**
+ * Bounded, tenant-filtered activity export. It deliberately walks the same
+ * cursor-based timeline used by the explorer, so inaccessible records can
+ * never enter the CSV even when the raw audit rows match a filter.
+ */
+export async function listActivityForExport(
+  viewer: ActivityViewer,
+  filters: ActivityFilters,
+  max = 5000
+): Promise<ActivityEntry[]> {
+  const entries: ActivityEntry[] = []
+  let cursor: string | undefined
+  while (entries.length < max) {
+    const page = await listGlobalActivity(viewer, filters, {
+      limit: Math.min(100, max - entries.length),
+      ...(cursor ? { cursor } : {})
+    })
+    entries.push(...page.data)
+    if (!page.nextCursor) break
+    cursor = page.nextCursor
+  }
+  return entries.slice(0, max)
 }
 
 export async function listEntityActivity(

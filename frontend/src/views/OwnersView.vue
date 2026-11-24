@@ -115,6 +115,45 @@
             :limit="10"
             :show-filters="false"
           />
+          <div class="full payouts">
+            <div class="payout-head">
+              <h3>{{ store.isArabic ? 'المدفوعات للمالك' : 'Owner payouts' }}</h3>
+              <button v-if="store.canManage" class="btn btn-quiet" type="button" @click="openPayoutForm">
+                <i class="fas fa-plus"></i> {{ store.isArabic ? 'تسجيل دفعة' : 'Record payout' }}
+              </button>
+            </div>
+            <p v-if="payoutSummary" class="muted">
+              {{ store.isArabic ? 'قيد الانتظار' : 'Pending' }}: {{ payoutSummary.pending }} ·
+              {{ store.isArabic ? 'مسدد' : 'Settled' }}: {{ payoutSummary.settled }}
+            </p>
+            <div v-if="payoutFormOpen" class="payout-form">
+              <label><span>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</span><input v-model="payoutForm.amount" type="number" min="0" step="0.01" /></label>
+              <label><span>{{ store.isArabic ? 'العملة' : 'Currency' }}</span><input v-model="payoutForm.currency" maxlength="3" /></label>
+              <label><span>{{ store.isArabic ? 'المرجع' : 'Reference' }}</span><input v-model="payoutForm.reference" maxlength="120" /></label>
+              <label><span>{{ store.isArabic ? 'من تاريخ' : 'Period start' }}</span><input v-model="payoutForm.periodStart" type="date" /></label>
+              <label><span>{{ store.isArabic ? 'إلى تاريخ' : 'Period end' }}</span><input v-model="payoutForm.periodEnd" type="date" /></label>
+              <label class="full"><span>{{ store.isArabic ? 'ملاحظات' : 'Notes' }}</span><textarea v-model="payoutForm.notes" rows="2" maxlength="5000"></textarea></label>
+              <div class="payout-actions full">
+                <button class="btn btn-primary" type="button" :disabled="payoutSaving" @click="savePayout">
+                  {{ payoutSaving ? '…' : (store.isArabic ? 'حفظ' : 'Save') }}
+                </button>
+                <button class="btn btn-quiet" type="button" @click="payoutFormOpen = false">{{ store.isArabic ? 'إلغاء' : 'Cancel' }}</button>
+              </div>
+            </div>
+            <p v-if="payoutError" class="error" role="alert">{{ payoutError }}</p>
+            <div v-if="payoutsLoading" class="empty">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
+            <div v-else-if="!payouts.length" class="empty">{{ store.isArabic ? 'لا توجد مدفوعات مسجلة.' : 'No payouts recorded.' }}</div>
+            <ul v-else class="payout-list">
+              <li v-for="payout in payouts" :key="payout.id">
+                <span><strong>{{ payout.amount }} {{ payout.currency }}</strong> · {{ payout.reference || '—' }}</span>
+                <span class="tag" :class="String(payout.status).toLowerCase()">{{ payoutStatusLabel(payout.status) }}</span>
+                <button v-if="store.canManage && payout.status === 'PENDING'" class="link" type="button" @click="settlePayout(payout)">
+                  {{ store.isArabic ? 'تحديد كمسدد' : 'Mark settled' }}
+                </button>
+                <time v-if="payout.settledAt" :datetime="payout.settledAt">{{ formatDate(payout.settledAt) }}</time>
+              </li>
+            </ul>
+          </div>
         </div>
       </section>
     </div>
@@ -228,7 +267,7 @@ import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { useStore } from '@/stores'
 import { ownerStatementCsv } from '@/utils/ownerStatementCsv'
-import type { Owner, OwnerStatement } from '@/types'
+import type { Owner, OwnerPayout, OwnerPayoutStatus, OwnerPayoutSummary, OwnerStatement } from '@/types'
 
 const store = useStore()
 const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
@@ -249,6 +288,13 @@ const statementOwner = ref<Owner | null>(null)
 const statement = ref<OwnerStatement | null>(null)
 const statementLoading = ref(false)
 const statementError = ref('')
+const payouts = ref<OwnerPayout[]>([])
+const payoutSummary = ref<OwnerPayoutSummary | null>(null)
+const payoutsLoading = ref(false)
+const payoutSaving = ref(false)
+const payoutFormOpen = ref(false)
+const payoutError = ref('')
+const payoutForm = reactive({ amount: '', currency: 'USD', reference: '', periodStart: '', periodEnd: '', notes: '' })
 
 const PROPERTY_STATUS_LABELS: Record<string, string> = {
   AVAILABLE: 'متاحة',
@@ -344,6 +390,10 @@ async function save(): Promise<void> {
 
 async function openDetails(row: Owner): Promise<void> {
   selected.value = { ...row }
+  payouts.value = []
+  payoutSummary.value = null
+  payoutFormOpen.value = false
+  payoutError.value = ''
   detailsLoading.value = true
   try {
     const response = await apiGet<Owner>(`/owners/${row.id}`)
@@ -353,6 +403,7 @@ async function openDetails(row: Owner): Promise<void> {
   } finally {
     detailsLoading.value = false
   }
+  void loadPayouts(row.id)
 }
 
 async function openStatement(row: Owner): Promise<void> {
@@ -375,6 +426,71 @@ function closeStatement(): void {
   statementOpen.value = false
   statementOwner.value = null
   statement.value = null
+}
+
+function payoutStatusLabel(status: OwnerPayoutStatus): string {
+  if (status === 'SETTLED') return store.isArabic ? 'مسدد' : 'Settled'
+  if (status === 'CANCELLED') return store.isArabic ? 'ملغي' : 'Cancelled'
+  return store.isArabic ? 'قيد الانتظار' : 'Pending'
+}
+
+async function loadPayouts(ownerId: string): Promise<void> {
+  payoutsLoading.value = true
+  payoutError.value = ''
+  try {
+    const response = await apiGet<OwnerPayout[]>(`/owners/${ownerId}/payouts`)
+    payouts.value = response.data ?? []
+    payoutSummary.value = (response as unknown as { summary?: OwnerPayoutSummary }).summary ?? null
+  } catch (e) {
+    payoutError.value = errorMessage(e)
+    payouts.value = []
+  } finally {
+    payoutsLoading.value = false
+  }
+}
+
+function openPayoutForm(): void {
+  payoutForm.amount = ''
+  payoutForm.currency = 'USD'
+  payoutForm.reference = ''
+  payoutForm.periodStart = ''
+  payoutForm.periodEnd = ''
+  payoutForm.notes = ''
+  payoutError.value = ''
+  payoutFormOpen.value = true
+}
+
+async function savePayout(): Promise<void> {
+  if (!selected.value) return
+  payoutSaving.value = true
+  payoutError.value = ''
+  try {
+    await apiPost(`/owners/${selected.value.id}/payouts`, {
+      amount: Number(payoutForm.amount),
+      currency: payoutForm.currency,
+      reference: payoutForm.reference || undefined,
+      periodStart: payoutForm.periodStart || undefined,
+      periodEnd: payoutForm.periodEnd || undefined,
+      notes: payoutForm.notes || undefined
+    })
+    payoutFormOpen.value = false
+    await loadPayouts(selected.value.id)
+  } catch (e) {
+    payoutError.value = errorMessage(e)
+  } finally {
+    payoutSaving.value = false
+  }
+}
+
+async function settlePayout(payout: OwnerPayout): Promise<void> {
+  if (!selected.value) return
+  payoutError.value = ''
+  try {
+    await apiPatch(`/owners/${selected.value.id}/payouts/${payout.id}`, { status: 'SETTLED' })
+    await loadPayouts(selected.value.id)
+  } catch (e) {
+    payoutError.value = errorMessage(e)
+  }
 }
 
 function onPrint(): void {
@@ -450,6 +566,16 @@ input, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem
 .pager button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer; }
 .prop-list { margin: 0; padding-inline-start: 1.2rem; display: flex; flex-direction: column; gap: 0.35rem; }
 .prop-list a { color: #4f46e5; text-decoration: none; }
+.payouts { border-top: 1px solid #eef2f7; padding-top: 0.9rem; }
+.payout-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.payout-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; background: #f9fafb; border-radius: 10px; padding: 0.8rem; margin: 0.7rem 0; }
+.payout-actions { display: flex; gap: 0.6rem; }
+.payout-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.payout-list li { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.84rem; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.4rem; }
+.payout-list time { margin-inline-start: auto; color: #6b7280; font-size: 0.72rem; }
+.tag.pending { background: #fef3c7; color: #92400e; }
+.tag.settled { background: #dcfce7; color: #166534; }
+.tag.cancelled { background: #f3f4f6; color: #6b7280; }
 .statement-modal { width: min(100%, 880px); }
 .statement-subtitle { padding: 0.8rem 1.2rem 0; }
 .statement-body { display: flex; flex-direction: column; gap: 1.1rem; }

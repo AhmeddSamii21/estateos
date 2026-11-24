@@ -1,11 +1,12 @@
 import { Router } from 'express'
-import { Prisma } from '@prisma/client'
+import { OwnerPayoutStatus, Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
-import { MANAGEMENT_ROLES, organizationIdOf, ownerReadScope, userIdOf } from '../utils/scope'
-import { booleanValue, optionalString, pagination } from '../utils/validation'
+import { FINANCE_ROLES, MANAGEMENT_ROLES, organizationIdOf, ownerReadScope, userIdOf } from '../utils/scope'
+import { booleanValue, dateValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { logAudit } from '../utils/audit'
+import { parseMoney } from '../utils/money'
 import {
   buildOwnerStatement,
   canViewOwnerFinancials,
@@ -61,6 +62,19 @@ function findWritableOwner(id: string, organizationId: string) {
   return prisma.owner.findFirst({
     where: { id, organizationId, deletedAt: null }
   })
+}
+
+function payoutSummary(rows: Array<{ amount: Prisma.Decimal; status: OwnerPayoutStatus }>) {
+  const sum = (status: OwnerPayoutStatus) =>
+    rows.filter((row) => row.status === status)
+      .reduce((total, row) => total.plus(row.amount), new Prisma.Decimal(0))
+      .toFixed(2)
+  return {
+    pending: sum(OwnerPayoutStatus.PENDING),
+    settled: sum(OwnerPayoutStatus.SETTLED),
+    cancelled: sum(OwnerPayoutStatus.CANCELLED),
+    count: rows.length
+  }
 }
 
 /**
@@ -135,6 +149,130 @@ router.get('/:id/statement', async (req, res, next) => {
       { includeFinancials }
     )
     res.json({ success: true, data: statement })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * Package 18: payout records are additive. Every query is restricted to the
+ * viewer's organization and to an owner that is readable in this tenant.
+ */
+router.get('/:id/payouts', requireRole(FINANCE_ROLES), async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    const owner = await prisma.owner.findFirst({
+      where: { id, ...ownerReadScope(organizationId), deletedAt: null },
+      select: { id: true }
+    })
+    if (!owner) throw createError('Owner not found', 404)
+    const where: Prisma.OwnerPayoutWhereInput = {
+      deletedAt: null,
+      organizationId,
+      ownerId: id,
+      ...(req.query.status
+        ? { status: (() => {
+            const value = String(req.query.status).toUpperCase()
+            if (!Object.values(OwnerPayoutStatus).includes(value as OwnerPayoutStatus)) {
+              throw createError('Invalid payout status', 400)
+            }
+            return value as OwnerPayoutStatus
+          })() }
+        : {})
+    }
+    const [payouts, rows] = await Promise.all([
+      prisma.ownerPayout.findMany({ where, orderBy: { createdAt: 'desc' }, take: 1000 }),
+      prisma.ownerPayout.findMany({
+        where: { deletedAt: null, organizationId, ownerId: id },
+        select: { amount: true, status: true },
+        take: 10000
+      })
+    ])
+    res.json({ success: true, data: payouts, summary: payoutSummary(rows) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/payouts', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    if (!await findWritableOwner(id, organizationId)) throw createError('Owner not found', 404)
+    const amount = parseMoney(req.body?.amount, 'amount', { min: 0 })
+    if (!amount || new Prisma.Decimal(amount).lte(0)) throw createError('amount must be greater than zero', 400)
+    const currency = (requiredString(req.body?.currency, 'currency', 3) || 'USD').toUpperCase()
+    if (!/^[A-Z]{3}$/.test(currency)) throw createError('currency must be a 3-letter code', 400)
+    const periodStart = dateValue(req.body?.periodStart, 'periodStart')
+    const periodEnd = dateValue(req.body?.periodEnd, 'periodEnd')
+    if (periodStart && periodEnd && periodStart > periodEnd) {
+      throw createError('periodStart must be before periodEnd', 400)
+    }
+    const payout = await prisma.$transaction(async (tx) => {
+      const created = await tx.ownerPayout.create({
+        data: {
+          organizationId,
+          ownerId: id,
+          amount,
+          currency,
+          reference: optionalString(req.body?.reference, 'reference', 120),
+          notes: optionalString(req.body?.notes, 'notes', 5000),
+          periodStart,
+          periodEnd,
+          createdById: userIdOf(req)
+        }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'OWNER_PAYOUT_CREATED',
+        entityType: 'OwnerPayout',
+        entityId: created.id,
+        details: { ownerId: id, amount, currency }
+      })
+      return created
+    })
+    res.status(201).json({ success: true, data: payout, message: 'Payout recorded successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/:id/payouts/:payoutId', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    const payoutId = String(req.params.payoutId)
+    if (!await findWritableOwner(id, organizationId)) throw createError('Owner not found', 404)
+    const existing = await prisma.ownerPayout.findFirst({
+      where: { id: payoutId, ownerId: id, organizationId, deletedAt: null }
+    })
+    if (!existing) throw createError('Payout not found', 404)
+    const requested = String(req.body?.status ?? OwnerPayoutStatus.SETTLED).toUpperCase()
+    if (!Object.values(OwnerPayoutStatus).includes(requested as OwnerPayoutStatus)) {
+      throw createError('Invalid payout status', 400)
+    }
+    const status = requested as OwnerPayoutStatus
+    const payout = await prisma.$transaction(async (tx) => {
+      const updated = await tx.ownerPayout.update({
+        where: { id: payoutId },
+        data: {
+          status,
+          ...(status === OwnerPayoutStatus.SETTLED
+            ? { settledAt: existing.settledAt ?? new Date(), settledById: userIdOf(req) }
+            : { settledAt: null, settledById: null })
+        }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: status === OwnerPayoutStatus.SETTLED ? 'OWNER_PAYOUT_SETTLED' : 'OWNER_PAYOUT_UPDATED',
+        entityType: 'OwnerPayout',
+        entityId: payoutId,
+        details: { ownerId: id, before: existing.status, after: status, amount: updated.amount.toString() }
+      })
+      return updated
+    })
+    res.json({ success: true, data: payout, message: 'Payout updated successfully' })
   } catch (error) {
     next(error)
   }

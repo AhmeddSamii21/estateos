@@ -40,6 +40,41 @@
         </div>
       </form>
 
+      <section v-if="!fxOnly && store.canManage" class="card">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'مصفوفة الأدوار والصلاحيات' : 'Role & permission matrix' }}</h2>
+          <span class="muted">
+            {{ store.isArabic ? 'الصلاحيات الفعّالة حسب الدور — للعرض فقط' : 'Effective permissions by role — read only' }}
+          </span>
+        </div>
+        <div class="table-scroll">
+          <table class="table matrix-table">
+            <thead>
+              <tr>
+                <th>{{ store.isArabic ? 'الدور' : 'Role' }}</th>
+                <th v-for="permission in permissionMatrix.permissions" :key="permission">
+                  {{ permissionLabel(permission, store.isArabic) }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="role in permissionMatrix.roles" :key="role">
+                <th scope="row">{{ roleLabel(role, store.isArabic) }}</th>
+                <td v-for="permission in permissionMatrix.permissions" :key="permission">
+                  <span
+                    class="permission-mark"
+                    :class="permissionMatrix.matrix[role]?.[permission] ? 'allowed' : 'denied'"
+                    :aria-label="permissionMatrix.matrix[role]?.[permission] ? 'allowed' : 'denied'"
+                  >
+                    {{ permissionMatrix.matrix[role]?.[permission] ? '✓' : '—' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="card">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'العملات المدارة' : 'Managed currencies' }}</h2>
@@ -146,8 +181,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPatch, apiPost, errorMessage, tokenStore } from '@/api/client'
+import { DEFAULT_PERMISSION_MATRIX, permissionLabel, roleLabel } from '@/config/permissions'
 import { useStore } from '@/stores'
-import type { ExchangeRateOverview, TenantSettings } from '@/types'
+import type { ExchangeRateOverview, PermissionMatrix, TenantSettings } from '@/types'
 
 const props = defineProps<{ fxOnly?: boolean }>()
 const store = useStore()
@@ -162,6 +198,7 @@ const isError = ref(false)
 const fxError = ref(false)
 const rawData = ref('{}')
 const fx = ref<ExchangeRateOverview | null>(null)
+const permissionMatrix = ref<PermissionMatrix>(DEFAULT_PERMISSION_MATRIX)
 
 const form = reactive({ defaultLanguage: 'en', defaultCurrency: 'USD' })
 const currencyForm = reactive({ code: '', name: '', symbol: '' })
@@ -170,7 +207,16 @@ const rateForm = reactive({ fromCurrency: '', toCurrency: '', rate: '', effectiv
 onMounted(async () => {
   try {
     const requests: Array<Promise<unknown>> = [apiGet<ExchangeRateOverview>('/settings/exchange-rates')]
-    if (!props.fxOnly) requests.unshift(apiGet<TenantSettings | null>('/settings'))
+    if (!props.fxOnly && store.canManage) {
+      requests.unshift(apiGet<TenantSettings | null>('/settings'))
+      try {
+        permissionMatrix.value = (await apiGet<PermissionMatrix>('/settings/permissions')).data
+      } catch {
+        permissionMatrix.value = DEFAULT_PERMISSION_MATRIX
+      }
+    } else if (!props.fxOnly) {
+      requests.unshift(apiGet<TenantSettings | null>('/settings'))
+    }
     const responses = await Promise.all(requests)
     fx.value = (responses[responses.length - 1] as { data: ExchangeRateOverview }).data
     if (!props.fxOnly) {
@@ -337,4 +383,10 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .message { margin-top: 1rem; padding: 0.6rem 0.8rem; border-radius: 8px; background: #dcfce7; color: #166534; font-size: 0.85rem; }
 .message.error { background: #fef2f2; color: #991b1b; }
 .state, .empty { padding: 2rem; text-align: center; color: #6b7280; }
+.table-scroll { overflow-x: auto; }
+.matrix-table { min-width: 1100px; }
+.matrix-table th:first-child, .matrix-table td:first-child { position: sticky; inset-inline-start: 0; background: #fff; }
+.permission-mark { display: inline-block; min-width: 1.4rem; text-align: center; border-radius: 999px; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
+.permission-mark.allowed { background: #dcfce7; color: #166534; }
+.permission-mark.denied { background: #f3f4f6; color: #9ca3af; }
 </style>

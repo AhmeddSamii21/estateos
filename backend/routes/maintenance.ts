@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { MaintenancePriority, MaintenanceStatus, Prisma } from '@prisma/client'
+import { MaintenancePriority, MaintenanceRecurrenceInterval, MaintenanceStatus, Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
@@ -14,6 +14,11 @@ import {
   maintenanceExpenseWhere,
   shouldRecordMaintenanceExpense
 } from '../utils/maintenanceExpense'
+import {
+  addRecurrenceMonths,
+  initialRecurrenceDue,
+  parseRecurrenceInterval
+} from '../utils/recurringMaintenance'
 
 const router = Router()
 router.use(authMiddleware)
@@ -114,6 +119,9 @@ router.post('/', async (req, res, next) => {
     const propertyId = requiredString(req.body?.propertyId, 'propertyId', 100)
     const assignedToId = optionalString(req.body?.assignedToId, 'assignedToId', 100)
     await assertRelations(propertyId, assignedToId, organizationId)
+    const recurrenceInterval = parseRecurrenceInterval(req.body?.recurrenceInterval)
+    const dueAt = dateValue(req.body?.dueAt, 'dueAt')
+    const nextDueAt = initialRecurrenceDue(recurrenceInterval, dueAt)
 
     const request = await prisma.$transaction(async (tx) => {
       const created = await tx.maintenanceRequest.create({
@@ -127,7 +135,9 @@ router.post('/', async (req, res, next) => {
           createdById: userId,
           cost: parseMoney(req.body?.cost, 'cost', { min: 0 }),
           currency: (optionalString(req.body?.currency, 'currency', 3) || 'USD').toUpperCase(),
-          dueAt: dateValue(req.body?.dueAt, 'dueAt'),
+          dueAt,
+          recurrenceInterval,
+          nextDueAt,
           notes: optionalString(req.body?.notes, 'notes', 5000)
         }
       })
@@ -186,6 +196,18 @@ router.patch('/:id', async (req, res, next) => {
     if (body.currency !== undefined) data.currency = (optionalString(body.currency, 'currency', 3) || 'USD').toUpperCase()
     if (body.dueAt !== undefined) data.dueAt = dateValue(body.dueAt, 'dueAt')
 
+    const recurrenceInterval = body.recurrenceInterval !== undefined
+      ? parseRecurrenceInterval(body.recurrenceInterval)
+      : existing.recurrenceInterval
+    if (body.recurrenceInterval !== undefined) data.recurrenceInterval = recurrenceInterval
+    if (body.nextDueAt !== undefined) data.nextDueAt = dateValue(body.nextDueAt, 'nextDueAt')
+    else if (body.recurrenceInterval !== undefined) {
+      data.nextDueAt = initialRecurrenceDue(
+        recurrenceInterval,
+        (body.dueAt !== undefined ? data.dueAt : existing.dueAt) as Date | null | undefined
+      )
+    }
+
     let status = existing.status
     if (body.status !== undefined) {
       status = enumValue(body.status, 'status', Object.values(MaintenanceStatus))
@@ -202,6 +224,15 @@ router.patch('/:id', async (req, res, next) => {
       data.assignedTo = assignedToId ? { connect: { id: assignedToId } } : { disconnect: true }
     }
 
+    // Completing a recurring cycle advances the schedule and opens the next
+    // request. Non-recurring requests keep their existing terminal behaviour.
+    let nextCycle: Date | null = null
+    if (status === MaintenanceStatus.COMPLETED && existing.status !== MaintenanceStatus.COMPLETED && recurrenceInterval !== MaintenanceRecurrenceInterval.NONE) {
+      const base = (data.nextDueAt as Date | undefined) ?? existing.nextDueAt ?? (data.dueAt as Date | undefined) ?? existing.dueAt ?? new Date()
+      nextCycle = addRecurrenceMonths(base, recurrenceInterval)
+      if (nextCycle) data.nextDueAt = nextCycle
+    }
+
     const request = await prisma.$transaction(async (tx) => {
       const updated = await tx.maintenanceRequest.update({ where: { id }, data })
       await logPropertyActivity(tx, {
@@ -211,6 +242,38 @@ router.patch('/:id', async (req, res, next) => {
         details: { requestId: id, before: existing.status, after: status }
       })
       await logAudit(tx, { userId, action: 'MAINTENANCE_UPDATED', entityType: 'MaintenanceRequest', entityId: id, details: { before: existing.status, after: status } })
+
+      let recurringFollowUpId: string | null = null
+      if (nextCycle) {
+        const followUp = await tx.maintenanceRequest.create({
+          data: {
+            organizationId,
+            propertyId: existing.propertyId,
+            title: `${updated.title} (next cycle)`,
+            description: updated.description,
+            priority: updated.priority,
+            status: MaintenanceStatus.OPEN,
+            assignedToId: updated.assignedToId,
+            createdById: userId,
+            cost: updated.cost,
+            currency: updated.currency,
+            dueAt: nextCycle,
+            nextDueAt: nextCycle,
+            recurrenceInterval,
+            recurrenceSourceId: id,
+            notes: updated.notes
+          },
+          select: { id: true }
+        })
+        recurringFollowUpId = followUp.id
+        await logAudit(tx, {
+          userId,
+          action: 'MAINTENANCE_RECURRENCE_CREATED',
+          entityType: 'MaintenanceRequest',
+          entityId: followUp.id,
+          details: { sourceId: id, dueAt: nextCycle.toISOString(), recurrenceInterval }
+        })
+      }
 
       const costForExpense = updated.cost
       const currencyForExpense = updated.currency
@@ -254,7 +317,7 @@ router.patch('/:id', async (req, res, next) => {
           metadata: { beforeStatus: existing.status, afterStatus: status, beforeAssignee: existing.assignedToId, afterAssignee: updated.assignedToId }
         })
       }
-      return withExpenseSummary({ ...updated, expense: linkedExpense })
+      return withExpenseSummary({ ...updated, expense: linkedExpense, recurringFollowUpId })
     })
     res.json({ success: true, data: request, message: 'Maintenance request updated successfully' })
   } catch (error) {

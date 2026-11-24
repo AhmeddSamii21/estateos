@@ -8,6 +8,7 @@ import { booleanValue, dateValue, numberValue, optionalString, requiredString } 
 import { listExchangeRatesForOrg, resolveCurrency, upsertCurrencyRecord } from '../utils/fx'
 import { parseRate } from '../utils/money'
 import { logAudit } from '../utils/audit'
+import { permissionMatrix } from '../utils/permissions'
 
 const router = Router()
 // General settings stay manager-only; the FX endpoints below are additionally
@@ -51,6 +52,17 @@ router.patch('/', async (req, res, next) => {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
       return next(createError('Organization not found', 404))
     }
+    next(error)
+  }
+})
+
+// Package 20: read-only role matrix. Managers/admins can review effective
+// permissions; the UI renders the same matrix bilingually.
+router.get('/permissions', async (req, res, next) => {
+  try {
+    requireAnyRole(req, MANAGEMENT_ROLES)
+    res.json({ success: true, data: permissionMatrix() })
+  } catch (error) {
     next(error)
   }
 })

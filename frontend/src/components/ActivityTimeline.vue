@@ -108,9 +108,9 @@ const filters = reactive({ entityType: '', action: '', userId: '', from: '', to:
 
 const ALL_ENTITY_TYPES = [
   'Property', 'Owner', 'Lead', 'Deal', 'Payment', 'Expense',
-  'Appointment', 'MaintenanceRequest', 'Document', 'Commission'
+  'Appointment', 'MaintenanceRequest', 'Document', 'Commission', 'OwnerPayout'
 ]
-const FINANCE_ENTITY_TYPES = ['Payment', 'Expense', 'Commission']
+const FINANCE_ENTITY_TYPES = ['Payment', 'Expense', 'Commission', 'OwnerPayout']
 const entityTypes = computed(() => store.user?.role === 'AGENT'
   ? ALL_ENTITY_TYPES.filter((type) => !FINANCE_ENTITY_TYPES.includes(type))
   : ALL_ENTITY_TYPES)
@@ -121,7 +121,7 @@ const hasMore = computed(() => Boolean(nextCursor.value) || (total.value !== nul
 const ENTITY_LABELS: Record<string, string> = {
   Property: 'عقار', Owner: 'مالك', Lead: 'عميل محتمل', Deal: 'صفقة',
   Payment: 'دفعة', Expense: 'مصروف', Appointment: 'موعد',
-  MaintenanceRequest: 'طلب صيانة', Document: 'وثيقة', Commission: 'عمولة'
+  MaintenanceRequest: 'طلب صيانة', Document: 'وثيقة', Commission: 'عمولة', OwnerPayout: 'دفعة مالك'
 }
 
 const ACTION_LABELS: Record<string, [string, string]> = {
@@ -164,7 +164,10 @@ const ACTION_LABELS: Record<string, [string, string]> = {
   DOCUMENT_UPLOADED: ['Document uploaded', 'تم رفع الوثيقة'],
   DOCUMENT_UPDATED: ['Document updated', 'تم تعديل الوثيقة'],
   DOCUMENT_STATUS_CHANGED: ['Document status changed', 'تغيرت حالة الوثيقة'],
-  DOCUMENT_ARCHIVED: ['Document archived', 'تم أرشفة الوثيقة']
+  DOCUMENT_ARCHIVED: ['Document archived', 'تم أرشفة الوثيقة'],
+  OWNER_PAYOUT_CREATED: ['Owner payout recorded', 'تم تسجيل دفعة للمالك'],
+  OWNER_PAYOUT_SETTLED: ['Owner payout settled', 'تم تسديد دفعة المالك'],
+  OWNER_PAYOUT_UPDATED: ['Owner payout updated', 'تم تعديل دفعة المالك']
 }
 
 const WORD_LABELS: Record<string, string> = {

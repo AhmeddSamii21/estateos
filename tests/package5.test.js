@@ -126,7 +126,8 @@ test('Part 3: reminder run reports zero work when there are no active organizati
     paymentReminders: 0,
     appointmentReminders: 0,
     leadFollowUpReminders: 0,
-    leaseRenewalReminders: 0
+    leaseRenewalReminders: 0,
+    maintenanceReminders: 0
   })
 })
 

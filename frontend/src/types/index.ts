@@ -368,6 +368,8 @@ export interface DocumentRecord {
   deal?: Pick<Deal, 'id' | 'referenceNumber'> | null
 }
 
+export type MaintenanceRecurrenceInterval = 'NONE' | 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL'
+
 export interface MaintenanceRequest {
   id: string
   organizationId: string
@@ -376,6 +378,9 @@ export interface MaintenanceRequest {
   description?: string | null
   priority: string
   status: string
+  recurrenceInterval?: MaintenanceRecurrenceInterval
+  nextDueAt?: string | null
+  recurrenceSourceId?: string | null
   assignedToId?: string | null
   createdById?: string | null
   cost?: MoneyValue | null
@@ -388,6 +393,39 @@ export interface MaintenanceRequest {
   property?: Pick<Property, 'id' | 'title' | 'referenceNumber'> | null
   assignedTo?: Pick<AppUser, 'id' | 'email' | 'firstName'> | null
   createdBy?: Pick<AppUser, 'id' | 'email' | 'firstName'> | null
+}
+
+export type OwnerPayoutStatus = 'PENDING' | 'SETTLED' | 'CANCELLED'
+
+export interface OwnerPayout {
+  id: string
+  organizationId: string
+  ownerId: string
+  amount: MoneyValue
+  currency: string
+  status: OwnerPayoutStatus
+  reference?: string | null
+  notes?: string | null
+  periodStart?: string | null
+  periodEnd?: string | null
+  settledAt?: string | null
+  settledById?: string | null
+  createdById?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OwnerPayoutSummary {
+  pending: MoneyValue
+  settled: MoneyValue
+  cancelled: MoneyValue
+  count: number
+}
+
+export interface PermissionMatrix {
+  roles: Role[]
+  permissions: string[]
+  matrix: Record<string, Record<string, boolean>>
 }
 
 export interface AuditLog {
