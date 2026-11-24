@@ -610,6 +610,9 @@ model Lead {
   // on demand; the stored value powers filtering and sorting.
   priorityScore     Int           @default(0)
   priorityTier      LeadPriorityTier @default(MEDIUM)
+  // Package 31: optional revocable read-only portal for this client record.
+  portalToken       String?       @unique
+  portalEnabled     Boolean       @default(false)
   isActive          Boolean       @default(true)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -633,6 +636,7 @@ model Lead {
   @@index([priorityScore])
   @@index([priorityTier])
   @@index([source])
+  @@index([portalEnabled])
 }
 
 // Lightweight interaction log for calls and quick follow-up notes. The legacy
@@ -705,6 +709,9 @@ model Deal {
   checklistOverrideReason String?
   checklistOverriddenById String?
   checklistOverriddenAt   DateTime?
+  // Package 31: optional revocable read-only portal for this deal/client.
+  portalToken    String?    @unique
+  portalEnabled  Boolean    @default(false)
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -729,6 +736,7 @@ model Deal {
   @@index([teamId])
   @@index([status])
   @@index([type, leaseEndAt])
+  @@index([portalEnabled])
 }
 
 model Payment {

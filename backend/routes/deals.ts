@@ -1,10 +1,11 @@
-import { Router } from 'express'
+import { Router, type Request, type Response, type NextFunction } from 'express'
 import crypto from 'node:crypto'
 import { DealStatus, DealType, PaymentStatus, Prisma, Role } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { FINANCE_ROLES, leadScope, MANAGEMENT_ROLES, organizationIdOf, roleOf, userIdOf } from '../utils/scope'
+import { clientPortalLink, newClientPortalToken, withoutPortalToken } from '../utils/clientPortal'
 import { booleanValue, dateValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { convertToBase, parseMoney } from '../utils/money'
 import { logAudit, logPropertyActivity } from '../utils/audit'
@@ -37,6 +38,13 @@ function leaseNoticeValue(value: unknown): number | undefined {
 
 const router = Router()
 router.use(authMiddleware)
+
+/** Package 31: the portal token is a capability and never leaves via management APIs. */
+const safeDeal = withoutPortalToken
+
+function findWritableDeal(id: string, organizationId: string) {
+  return prisma.deal.findFirst({ where: { id, organizationId, deletedAt: null, isActive: true } })
+}
 
 async function baseCurrencyOf(organizationId: string): Promise<string> {
   const organization = await prisma.organization.findFirst({
@@ -132,7 +140,7 @@ router.get('/', async (req, res, next) => {
         }
       })
     ])
-    res.json({ success: true, data: deals, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    res.json({ success: true, data: deals.map(safeDeal), pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
   } catch (error) {
     next(error)
   }
@@ -301,7 +309,8 @@ router.get('/:id', async (req, res, next) => {
           }
         },
         user: { select: { id: true, email: true, firstName: true, role: true } },
-        lead: true,
+        // Package 31: never nest the full lead (notes or portal capability) here.
+        lead: { select: { id: true, firstName: true, lastName: true } },
         payments: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
         commissions: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
         documents: { where: { status: 'ACTIVE', deletedAt: null } },
@@ -325,7 +334,7 @@ router.get('/:id', async (req, res, next) => {
     const visibleDeal = canViewAllDeals(req.user?.role)
       ? deal
       : { ...deal, payments: undefined, commissions: undefined, expenses: undefined }
-    res.json({ success: true, data: { ...visibleDeal, auditTrail } })
+    res.json({ success: true, data: { ...safeDeal(visibleDeal), auditTrail } })
   } catch (error) {
     next(error)
   }
@@ -409,7 +418,7 @@ router.post('/', async (req, res, next) => {
       })
       return created
     })
-    res.status(201).json({ success: true, data: deal, message: 'Deal created successfully' })
+    res.status(201).json({ success: true, data: safeDeal(deal), message: 'Deal created successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return next(createError('A deal with this reference number already exists', 409))
@@ -703,7 +712,7 @@ router.patch('/:id', async (req, res, next) => {
         }
       })
     }
-    res.json({ success: true, data: deal, message: 'Deal updated successfully' })
+    res.json({ success: true, data: safeDeal(deal), message: 'Deal updated successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
       return next(createError('Deal was updated concurrently; please retry', 409))
@@ -711,6 +720,100 @@ router.patch('/:id', async (req, res, next) => {
     next(error)
   }
 })
+
+/**
+ * Package 31: management-only lifecycle for the revocable client portal link.
+ * The lookup is tenant-scoped, and archiving always revokes the capability.
+ */
+router.get('/:id/portal-link', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const deal = await findWritableDeal(String(req.params.id), organizationIdOf(req))
+    if (!deal) throw createError('Deal not found', 404)
+    res.json({ success: true, data: clientPortalLink(deal, req) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const deal = await findWritableDeal(id, organizationIdOf(req))
+    if (!deal) throw createError('Deal not found', 404)
+    if (deal.portalEnabled && deal.portalToken) {
+      return res.json({ success: true, data: clientPortalLink(deal, req), message: 'Client portal link is already active' })
+    }
+    const token = newClientPortalToken('DEAL')
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.deal.update({ where: { id }, data: { portalToken: token, portalEnabled: true } })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'DEAL_PORTAL_LINK_CREATED',
+        entityType: 'Deal',
+        entityId: id
+      })
+      return record
+    })
+    res.status(201).json({
+      success: true,
+      data: clientPortalLink(updated, req),
+      message: 'Client portal link created'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token/regenerate', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableDeal(id, organizationIdOf(req))) throw createError('Deal not found', 404)
+    const token = newClientPortalToken('DEAL')
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.deal.update({ where: { id }, data: { portalToken: token, portalEnabled: true } })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'DEAL_PORTAL_LINK_REGENERATED',
+        entityType: 'Deal',
+        entityId: id
+      })
+      return record
+    })
+    res.json({
+      success: true,
+      data: clientPortalLink(updated, req),
+      message: 'Client portal link regenerated'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function revokeDealPortalLink(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableDeal(id, organizationIdOf(req))) throw createError('Deal not found', 404)
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.deal.update({
+        where: { id },
+        data: { portalEnabled: false, portalToken: null }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'DEAL_PORTAL_LINK_REVOKED',
+        entityType: 'Deal',
+        entityId: id
+      })
+      return record
+    })
+    res.json({ success: true, data: clientPortalLink(updated, req), message: 'Client portal link revoked' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/portal-token/revoke', requireRole(MANAGEMENT_ROLES), revokeDealPortalLink)
+router.delete('/:id/portal-token', requireRole(MANAGEMENT_ROLES), revokeDealPortalLink)
 
 router.delete('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
   try {
@@ -723,7 +826,10 @@ router.delete('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
     if (hasPayments > 0) throw createError('Deals with recorded payments cannot be archived; cancel the deal instead', 400)
 
     await prisma.$transaction(async (tx) => {
-      await tx.deal.update({ where: { id }, data: { isActive: false, deletedAt: new Date(), status: DealStatus.CANCELLED } })
+      await tx.deal.update({
+        where: { id },
+        data: { isActive: false, deletedAt: new Date(), status: DealStatus.CANCELLED, portalEnabled: false, portalToken: null }
+      })
       await logAudit(tx, { userId, action: 'DEAL_ARCHIVED', entityType: 'Deal', entityId: id })
       await logPropertyActivity(tx, { propertyId: existing.propertyId, userId, action: 'DEAL_ARCHIVED', details: { dealId: id } })
       const recipients = await organizationRecipientIds(tx, organizationId, {

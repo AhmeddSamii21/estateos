@@ -22,10 +22,12 @@ const routes = [
       { path: 'properties/:id', name: 'PropertyDetail', component: () => import('@/views/PropertyDetail.vue'), props: true, meta: { title: 'Property Details' } },
       { path: 'properties/:id/edit', name: 'EditProperty', component: () => import('@/views/PropertyForm.vue'), props: true, meta: { title: 'Edit Property' } },
       { path: 'leads', name: 'Leads', component: () => import('@/views/ResourceView.vue'), props: { resource: 'leads' }, meta: { title: 'Leads' } },
+      { path: 'leads/:id', name: 'LeadDetail', component: () => import('@/views/LeadDetail.vue'), props: true, meta: { title: 'Lead Details' } },
       { path: 'appointments', name: 'Appointments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'appointments' }, meta: { title: 'Appointments' } },
       { path: 'deals', name: 'Deals', component: () => import('@/views/ResourceView.vue'), props: { resource: 'deals' }, meta: { title: 'Deals' } },
       { path: 'deals/:id', name: 'DealDetail', component: () => import('@/views/DealDetail.vue'), props: true, meta: { title: 'Deal Details' } },
       { path: 'finance/payments', name: 'Payments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'payments' }, meta: { title: 'Payments', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
+      { path: 'finance/payment-calculator', name: 'PaymentCalculator', component: () => import('@/views/PaymentCalculatorView.vue'), meta: { title: 'Payment calculator' } },
       { path: 'finance/expenses', name: 'Expenses', component: () => import('@/views/ResourceView.vue'), props: { resource: 'expenses' }, meta: { title: 'Expenses', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/commissions', name: 'Commissions', component: () => import('@/views/ResourceView.vue'), props: { resource: 'commissions' }, meta: { title: 'Commissions', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/commission-statements', name: 'CommissionStatements', component: () => import('@/views/CommissionStatementsView.vue'), meta: { title: 'Commission statements' } },
@@ -44,6 +46,7 @@ const routes = [
   },
   { path: '/p/:shareToken', name: 'PublicProperty', component: () => import('@/views/PublicPropertyView.vue'), meta: { title: 'Property details' } },
   { path: '/owner-portal/:token', name: 'OwnerPortal', component: () => import('@/views/OwnerPortalView.vue'), meta: { title: 'Owner portal' } },
+  { path: '/client-portal/:token', name: 'ClientPortal', component: () => import('@/views/ClientPortalView.vue'), meta: { title: 'Client portal' } },
   { path: '/:catchAll(.*)', name: 'NotFound', component: () => import('@/views/NotFound.vue'), meta: { title: 'Not Found' } }
 ]
 

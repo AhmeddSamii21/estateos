@@ -205,6 +205,9 @@
                 <router-link v-if="isDeals" class="link" :to="`/deals/${row.id}`">
                   {{ store.isArabic ? 'عرض' : 'View' }}
                 </router-link>
+                <router-link v-if="isLeads" class="link" :to="`/leads/${row.id}`">
+                  {{ store.isArabic ? 'عرض' : 'View' }}
+                </router-link>
                 <button v-if="props.resource === 'leads'" type="button" class="link" @click="openMatches(row)">
                   {{ store.isArabic ? '???????' : 'Matches' }}
                 </button>

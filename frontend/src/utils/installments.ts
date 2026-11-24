@@ -1,30 +1,12 @@
-export type InstallmentFrequency = 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUAL' | 'ANNUAL'
+/**
+ * Package 32: frequency and date helpers now live in the pure calculator core
+ * so the tested implementation is shared with the mortgage simulator.
+ */
+import { INSTALLMENT_MONTH_STEPS, addMonthsClamped } from './paymentCalculatorCore.mjs'
+import type { InstallmentFrequency } from './paymentCalculatorCore.mjs'
 
-export const INSTALLMENT_FREQUENCIES: readonly InstallmentFrequency[] = [
-  'MONTHLY',
-  'QUARTERLY',
-  'SEMI_ANNUAL',
-  'ANNUAL'
-]
-
-export const INSTALLMENT_MONTH_STEPS: Record<InstallmentFrequency, number> = {
-  MONTHLY: 1,
-  QUARTERLY: 3,
-  SEMI_ANNUAL: 6,
-  ANNUAL: 12
-}
-
-/** Returns the same UTC time on a later month, clamping to that month's last day. */
-export function addMonthsClamped(date: Date, months: number): Date {
-  const day = date.getUTCDate()
-  const result = new Date(date.getTime())
-  // Move to the first day before changing the month so day 31 never rolls over.
-  result.setUTCDate(1)
-  result.setUTCMonth(result.getUTCMonth() + months)
-  const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate()
-  result.setUTCDate(Math.min(day, lastDay))
-  return result
-}
+export { INSTALLMENT_FREQUENCIES, INSTALLMENT_MONTH_STEPS, addMonthsClamped } from './paymentCalculatorCore.mjs'
+export type { InstallmentFrequency } from './paymentCalculatorCore.mjs'
 
 export interface InstallmentPreviewRow {
   index: number

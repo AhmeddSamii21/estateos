@@ -25,6 +25,9 @@
         <router-link to="/deals" class="nav-link">
           <i class="fas fa-handshake"></i><span>{{ t('Deals') }}</span>
         </router-link>
+        <router-link to="/finance/payment-calculator" class="nav-link">
+          <i class="fas fa-calculator"></i><span>{{ t('Payment calculator') }}</span>
+        </router-link>
         <router-link to="/documents" class="nav-link">
           <i class="fas fa-folder-open"></i><span>{{ t('Documents') }}</span>
         </router-link>
@@ -192,6 +195,8 @@ const ArabicLabels: Record<string, string> = {
   'Property Details': 'تفاصيل العقار',
   'Edit Property': 'تعديل العقار',
   'Deal Details': 'تفاصيل الصفقة',
+  'Lead Details': 'تفاصيل العميل المحتمل',
+  'Payment calculator': 'حاسبة الدفعات',
   'Reports & Analytics': 'التقارير والتحليلات',
   'Advanced Search & Map': 'البحث المتقدم والخريطة',
   'Property details': 'تفاصيل العقار',

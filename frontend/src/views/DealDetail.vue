@@ -52,6 +52,8 @@
         <p v-if="deal.notes" class="description">{{ deal.notes }}</p>
       </section>
 
+      <ClientPortalPanel entity-type="Deal" :entity-id="deal.id" />
+
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'قائمة الإغلاق' : 'Closing checklist' }}</h2>
@@ -334,6 +336,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
+import ClientPortalPanel from '@/components/ClientPortalPanel.vue'
 import { dealTransitions } from '@/config/resources'
 import { downloadDocument } from '@/utils/documents'
 import {

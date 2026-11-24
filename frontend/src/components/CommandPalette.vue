@@ -124,6 +124,7 @@ const actionSpecs = computed<ActionSpec[]>(() => {
     { id: 'leads', english: 'Leads', arabic: 'العملاء المحتملون', hintEn: 'Qualify and prioritise enquiries', hintAr: 'تأهيل الطلبات وترتيب أولوياتها', icon: 'fas fa-user-plus', route: '/leads' },
     { id: 'appointments', english: 'Appointments', arabic: 'المواعيد', hintEn: 'Schedule viewings and calls', hintAr: 'جدولة المعاينات والمكالمات', icon: 'fas fa-calendar', route: '/appointments' },
     { id: 'deals', english: 'Deals', arabic: 'الصفقات', hintEn: 'Track deal stages and checklists', hintAr: 'متابعة مراحل الصفقات وقوائم الإغلاق', icon: 'fas fa-handshake', route: '/deals' },
+    { id: 'payment-calculator', english: 'Payment calculator', arabic: 'حاسبة الدفعات', hintEn: 'Model installments, markup, and balloons', hintAr: 'نمذج الأقساط والهامش والدفعات الكبيرة', icon: 'fas fa-calculator', route: '/finance/payment-calculator' },
     { id: 'maintenance', english: 'Maintenance', arabic: 'الصيانة', hintEn: 'Recurring requests and expenses', hintAr: 'الطلبات المتكررة والمصروفات', icon: 'fas fa-screwdriver-wrench', route: '/maintenance' },
     { id: 'global-search', english: 'Global search', arabic: 'البحث العام', hintEn: 'Find records across the workspace', hintAr: 'ابحث في السجلات في كل مساحة العمل', icon: 'fas fa-magnifying-glass', shortcut: '⌘K', action: () => search.open() }
   ]

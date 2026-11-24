@@ -34,3 +34,17 @@ export function buildOwnerPortalUrl(token: string, options: { publicAppUrl?: str
   if (origin) return `${origin}${path}`
   return path
 }
+
+/** Package 31: the read-only client portal, minted per lead or deal. */
+export function clientPortalPath(token: string): string {
+  return `/client-portal/${encodeURIComponent(token)}`
+}
+
+export function buildClientPortalUrl(token: string, options: { publicAppUrl?: string; origin?: string } = {}): string {
+  const path = clientPortalPath(token)
+  const base = options.publicAppUrl?.replace(/\/$/, '')
+  if (base) return `${base}${path}`
+  const origin = options.origin?.replace(/\/$/, '')
+  if (origin) return `${origin}${path}`
+  return path
+}

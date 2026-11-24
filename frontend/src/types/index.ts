@@ -169,6 +169,7 @@ export interface Lead {
   nextFollowUpAt?: string | null
   lastContactedAt?: string | null
   followUpNotes?: LeadNote[]
+  portalEnabled?: boolean
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -246,7 +247,8 @@ export interface Deal {
   updatedAt: string
   property?: Pick<Property, 'id' | 'title' | 'referenceNumber' | 'city' | 'address'> | null
   user?: Pick<AppUser, 'id' | 'email' | 'firstName' | 'role'> | null
-  lead?: Lead | null
+  lead?: Pick<Lead, 'id' | 'firstName' | 'lastName'> | null
+  portalEnabled?: boolean
   payments?: Payment[]
   commissions?: Commission[]
   documents?: DocumentRecord[]
@@ -683,6 +685,88 @@ export interface OwnerPortalLink {
   enabled: boolean
   token: string | null
   url: string | null
+}
+
+/** Package 31: management-only view of a revocable client portal capability. */
+export interface ClientPortalLink {
+  enabled: boolean
+  token: string | null
+  url: string | null
+}
+
+export interface ClientPortalProperty {
+  referenceNumber: string | null
+  title: string
+  description: string | null
+  type: string
+  status: string
+  classification: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  country: string | null
+  postalCode: string | null
+  price: MoneyValue | null
+  currency: string
+  bedrooms: number
+  bathrooms: number
+  floors: number | null
+  area: MoneyValue | null
+  areaUnit: string
+  yearBuilt: number | null
+  condition: string
+  negotiable: boolean
+  availableFrom: string | null
+}
+
+export interface ClientPortalPayment {
+  amount: MoneyValue
+  currency: string
+  status: string
+  reference: string | null
+  dueAt: string | null
+  paidAt: string | null
+}
+
+export interface ClientPortalDeal {
+  referenceNumber: string | null
+  type: string
+  status: string
+  amount?: MoneyValue
+  currency: string
+  dueAt?: string | null
+  closedAt?: string | null
+  leaseStartAt?: string | null
+  leaseEndAt?: string | null
+  startedAt?: string | null
+  property?: Pick<ClientPortalProperty, 'title' | 'referenceNumber' | 'city'> | null
+  payments: ClientPortalPayment[]
+  summary: {
+    payments: number
+    due: string
+    paid: string
+    outstanding: string
+  }
+}
+
+export interface PublicClientPortal {
+  kind: 'LEAD' | 'DEAL'
+  client: {
+    displayName: string
+    organizationName: string | null
+  }
+  property: ClientPortalProperty | null
+  clientInterest: { displayName: string } | null
+  deal: ClientPortalDeal | null
+  deals: ClientPortalDeal[]
+  lead: {
+    status: string
+    preferredType: string | null
+    preferredCity: string | null
+    preferredBedrooms: number | null
+    budgetMin: MoneyValue | null
+    budgetMax: MoneyValue | null
+  } | null
 }
 
 export interface OwnerStatement {

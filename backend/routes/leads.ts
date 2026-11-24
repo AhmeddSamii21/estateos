@@ -2,9 +2,10 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer'
 import { LeadPriorityTier, LeadStatus, Prisma, PropertyStatus, PropertyType, Role } from '@prisma/client'
 import { prisma } from '../prisma'
-import { authMiddleware } from '../middleware/auth'
+import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
-import { leadScope, organizationIdOf, requireAnyRole, roleOf, userIdOf } from '../utils/scope'
+import { MANAGEMENT_ROLES, leadScope, organizationIdOf, requireAnyRole, roleOf, userIdOf } from '../utils/scope'
+import { clientPortalLink, newClientPortalToken, withoutPortalToken } from '../utils/clientPortal'
 import { booleanValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { parseMoney } from '../utils/money'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
@@ -75,6 +76,13 @@ async function validateLeadImportRows(preview: ImportPreview, organizationId: st
 
 function scope(organizationId: string): Prisma.LeadWhereInput {
   return { deletedAt: null, ...leadScope(organizationId) }
+}
+
+/** Package 31: the portal token is a capability and never leaves via management APIs. */
+const safeLead = withoutPortalToken
+
+function findWritableLead(id: string, organizationId: string) {
+  return prisma.lead.findFirst({ where: { id, deletedAt: null, ...leadScope(organizationId) } })
 }
 
 async function assertAssignable(assignedToId: string | undefined, propertyId: string | undefined, organizationId: string) {
@@ -213,7 +221,7 @@ router.get('/', async (req, res, next) => {
       prisma.lead.count({ where }),
       prisma.lead.findMany({ where, skip, take: limit, orderBy })
     ])
-    res.json({ success: true, data: leads, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    res.json({ success: true, data: leads.map(safeLead), pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
   } catch (error) {
     next(error)
   }
@@ -428,7 +436,7 @@ router.post('/:id/recompute-priority', async (req, res, next) => {
       })
       return updated
     })
-    res.json({ success: true, data: lead, message: 'Lead priority recalculated' })
+    res.json({ success: true, data: safeLead(lead), message: 'Lead priority recalculated' })
   } catch (error) {
     next(error)
   }
@@ -454,11 +462,105 @@ router.get('/:id', async (req, res, next) => {
       }
     })
     if (!lead) throw createError('Lead not found', 404)
-    res.json({ success: true, data: lead })
+    res.json({ success: true, data: safeLead(lead) })
   } catch (error) {
     next(error)
   }
 })
+
+/**
+ * Package 31: management-only lifecycle for the revocable client portal link.
+ * Leads have no direct tenant id, so every lookup goes through leadScope.
+ */
+router.get('/:id/portal-link', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const lead = await findWritableLead(String(req.params.id), organizationIdOf(req))
+    if (!lead) throw createError('Lead not found', 404)
+    res.json({ success: true, data: clientPortalLink(lead, req) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const lead = await findWritableLead(id, organizationIdOf(req))
+    if (!lead) throw createError('Lead not found', 404)
+    if (lead.portalEnabled && lead.portalToken) {
+      return res.json({ success: true, data: clientPortalLink(lead, req), message: 'Client portal link is already active' })
+    }
+    const token = newClientPortalToken('LEAD')
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.lead.update({ where: { id }, data: { portalToken: token, portalEnabled: true } })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'LEAD_PORTAL_LINK_CREATED',
+        entityType: 'Lead',
+        entityId: id
+      })
+      return record
+    })
+    res.status(201).json({
+      success: true,
+      data: clientPortalLink(updated, req),
+      message: 'Client portal link created'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token/regenerate', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableLead(id, organizationIdOf(req))) throw createError('Lead not found', 404)
+    const token = newClientPortalToken('LEAD')
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.lead.update({ where: { id }, data: { portalToken: token, portalEnabled: true } })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'LEAD_PORTAL_LINK_REGENERATED',
+        entityType: 'Lead',
+        entityId: id
+      })
+      return record
+    })
+    res.json({
+      success: true,
+      data: clientPortalLink(updated, req),
+      message: 'Client portal link regenerated'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function revokeLeadPortalLink(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableLead(id, organizationIdOf(req))) throw createError('Lead not found', 404)
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.lead.update({
+        where: { id },
+        data: { portalEnabled: false, portalToken: null }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'LEAD_PORTAL_LINK_REVOKED',
+        entityType: 'Lead',
+        entityId: id
+      })
+      return record
+    })
+    res.json({ success: true, data: clientPortalLink(updated, req), message: 'Client portal link revoked' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/portal-token/revoke', requireRole(MANAGEMENT_ROLES), revokeLeadPortalLink)
+router.delete('/:id/portal-token', requireRole(MANAGEMENT_ROLES), revokeLeadPortalLink)
 
 // Quick follow-up/call note: one write records the interaction, stamps the
 // last contact, and optionally schedules (or clears) the next follow-up.
@@ -624,7 +726,7 @@ router.post('/', async (req, res, next) => {
         propertyId: lead.propertyId
       }
     })
-    res.status(201).json({ success: true, data: lead, message: 'Lead created successfully' })
+    res.status(201).json({ success: true, data: safeLead(lead), message: 'Lead created successfully' })
   } catch (error) {
     next(error)
   }
@@ -732,7 +834,7 @@ router.patch('/:id', async (req, res, next) => {
         metadata: { beforeStatus: existing.status, afterStatus: lead.status, beforeAssignee: existing.assignedToId, afterAssignee: lead.assignedToId }
       })
     }
-    res.json({ success: true, data: lead, message: 'Lead updated successfully' })
+    res.json({ success: true, data: safeLead(lead), message: 'Lead updated successfully' })
   } catch (error) {
     next(error)
   }
@@ -745,7 +847,10 @@ router.delete('/:id', async (req, res, next) => {
     const existing = await prisma.lead.findFirst({ where: { id, ...scope(organizationId) } })
     if (!existing) throw createError('Lead not found', 404)
     const lead = await prisma.$transaction(async (tx) => {
-      const updated = await tx.lead.update({ where: { id }, data: { isActive: false, deletedAt: new Date() } })
+      const updated = await tx.lead.update({
+        where: { id },
+        data: { isActive: false, deletedAt: new Date(), portalEnabled: false, portalToken: null }
+      })
       await logAudit(tx, {
         userId: userIdOf(req),
         action: 'LEAD_ARCHIVED',
@@ -755,7 +860,7 @@ router.delete('/:id', async (req, res, next) => {
       })
       return updated
     })
-    res.json({ success: true, data: lead, message: 'Lead archived successfully' })
+    res.json({ success: true, data: safeLead(lead), message: 'Lead archived successfully' })
   } catch (error) {
     next(error)
   }
