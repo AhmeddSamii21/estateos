@@ -33,7 +33,7 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 - `index.ts` — Express app assembly and `start()`/`shutdown()` used by tests.
 - `middleware/` — authentication, errors and 404 handling.
 - `routes/` — auth, users, properties, leads, appointments, deals, finance, documents, maintenance, owners, reports, search, settings, notifications and activity.
-- `services/` — notification creation and activity logging.
+- `services/` — notification creation, activity logging and scheduled reminders (`reminders.ts`).
 - `utils/` — validation, scope/authorization helpers, money and FX math, deal status transitions, property status transitions, lead matching, search query building, audit and safe file handling.
 - `storage/local.ts` — filesystem document storage outside the public web root.
 
@@ -57,9 +57,20 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 - **Package 9** — `maintenanceExpense.ts`, `reportMetrics.ts` and `propertyBoard.ts`; maintenance writes one linked expense via a unique relation, reports expose funnel/SLA, and PropertyList groups by status.
 - **Package 10** — `inMemoryRateLimit.ts`, `health.ts`, `snapshot.ts` and `queryAudit.ts` back per-endpoint limits, deep health, ADMIN snapshot export and bounded list queries. Request IDs and explicit security headers are installed in `backend/index.ts` and echoed by `errorHandler.ts`.
 
+## Packages 11–23 — verified status (2026-11-24)
+
+- **11–13** — smoke suite (`5a3c029`) and upload suite (`5875bb8`) are committed; `tests/package13-dashboard-ux.test.js` covers the Dashboard date-range pills, summary API ranges and responsive/touch-target styling.
+- **14–18** — only foundational pieces exist: image metadata/reordering (14), lead source and budget criteria (15), deal transition guardrails (16), payment due dates and balance math (17), owner statements and deduplicated reminders (18). The requested checklist, aging, payout and recurrence features were not implemented.
+- **19** — advisory appointment overlap detection (`backend/utils/appointments.ts`) and a list/agenda toggle in `ResourceView.vue` are present, with `tests/appointments.test.js`.
+- **20** — no brief, commit or code.
+- **21–22** — no command palette/filter presets and no webhook configuration/delivery log.
+- **23** — verification, UI hardening, service restart/health checks and documentation sync. No new domain feature was added.
+
+See [README.md](README.md) and [RUNBOOK.md](RUNBOOK.md) for the per-package status table and verification commands.
+
 ## Tests
 
-`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 131 tests. Three suites (`auth-state`, `deal-workflow`, `user-authorization`) start the API and use Prisma against the configured PostgreSQL database; the rest run offline. Each database-backed suite creates tagged fixtures and removes them in `test.after`.
+`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 142 tests. Three suites (`auth-state`, `deal-workflow`, `user-authorization`) start the API and use Prisma against the configured PostgreSQL database; the rest run offline. Each database-backed suite creates tagged fixtures and removes them in `test.after`.
 
 ## Legacy prototype
 

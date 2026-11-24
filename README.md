@@ -36,7 +36,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run all 131 automated tests (`node --test tests/**/*.test.js`) |
+| `npm test` | Run all 142 automated tests (`node --test tests/**/*.test.js`) |
 | `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
 | `npm run typecheck` | Type-check both backend and frontend without emitting files |
 | `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
@@ -45,7 +45,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 | `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
 | `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
 
-Current verification status: **131 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
+Current verification status: **142 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
 
 ## What the application does
 
@@ -66,6 +66,26 @@ Current verification status: **131 tests pass**, both typechecks pass, API compi
 - **Package 8** — CSV imports for properties/leads with dry-run validation, deal installment schedules with `Payment.dueAt`, and safe, category-filtered notification targets.
 - **Package 9** — completed maintenance can create one linked expense idempotently; funnel/SLA metrics with CSV export and uncontacted-lead reminders; a property status board with guarded quick transitions.
 - **Package 10** — per-endpoint in-memory rate limits with `429`/`Retry-After`, security headers and `X-Request-Id`, deep health checks, ADMIN-only snapshot export, a bounded-query audit and synced documentation.
+
+## Packages 11–23 — verified status (2026-11-24)
+
+These packages were requested in sequence, but only some were implemented. This table records the **actual repository state**, not the intended scope of each brief.
+
+| Package | Status | What is actually present |
+| --- | --- | --- |
+| 11 | Committed as `5a3c029` | Smoke coverage over real tenant-scoped GET endpoints (`tests/package11-smoke.test.js`), plus RTL/print polish. |
+| 12 | Committed as `5875bb8` | Authenticated upload/download/preview tests and storage-safety checks (`tests/package12-uploads.test.js`). |
+| 13 | Delivered | Dashboard bilingual date-range pills (7d/30d/90d/all) scope the cards, the summary API accepts `range`/`from`/`to`, responsive 768px tables and 44px touch targets were added to the linked views, and `tests/package13-dashboard-ux.test.js` covers the behavior. |
+| 14 | Partial | `PropertyImage` already carries `storageKey`, `caption`, `isPrimary`, `sortOrder` with a reorder endpoint and UI controls. No floorplan/brochure attachment model or UI exists. |
+| 15 | Partial | `Lead.source`, `budgetMin` and `budgetMax` exist and feed lead matching. There is no priority score field, source/budget list filter or dedicated qualification UI. |
+| 16 | Partial | Forward-only deal transitions, `closedAt` and audit/notification side effects exist. There is no closing checklist, override reason or stage guard based on checklist completion. |
+| 17 | Partial | Payment `dueAt`, installment schedules and decimal outstanding-balance math exist. There are no aging buckets or record-partial-payment actions. |
+| 18 | Partial | Owner statements and daily reminder deduplication exist. There is no owner payout/settlement marking or recurring maintenance interval/next-due tracking. |
+| 19 | Present (no dedicated commit) | Advisory overlap detection for the same assigned user/property, warning payloads on create/reschedule, and a list/agenda toggle with English/Arabic labels. Covered by `tests/appointments.test.js`. |
+| 20 | Not applicable | No Package 20 brief was issued in this session and no matching commit or code exists. |
+| 21 | Absent | A global `SearchModal` exists, but there is no Ctrl/Cmd+K command palette, recent-item actions or saved property filter presets. |
+| 22 | Absent | No webhook configuration, delivery log, URL allowlist or outbound delivery service exists. |
+| 23 | Release readiness | Full verification pass, UI hardening fixes, service restart/health checks, and this documentation sync. No new domain feature was added. |
 
 ## Documentation
 

@@ -2,14 +2,14 @@
 
 This is the authoritative local setup and verification guide for the Vue 3 + Express + Prisma + PostgreSQL application. Reports in the project root are historical snapshots and may describe an older state. `real-estate-locator.html` is a legacy standalone prototype, not this application.
 
-## Current state (verified 2026-11-23)
+## Current state (verified 2026-11-24)
 
-- PostgreSQL 18.7 is installed; service `postgresql-x64-18` is Running/Automatic and TCP port 5432 is listening.
-- `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. The earlier `P1000` credential blocker is resolved; values are never printed here.
+- PostgreSQL is reachable on port 5432; `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. Values are never printed here.
 - `npm run prisma:validate` passes; `npm run prisma:generate` regenerates Prisma Client 6.4.1.
-- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **131 tests**, and the production frontend build.
-- `npx prisma migrate status` reports **5 migrations found; 1 not yet applied**: `20261123000000_lead_match_criteria`. The first four are applied. The new migration is present in the repository but was intentionally **not** applied as part of this documentation package.
-- The repository has been initialized with Git. No commit or push has been made.
+- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **142 tests**, and the production frontend build.
+- `npx prisma migrate status` reports **8 migrations found** and **Database schema is up to date**.
+- The API runs on `http://localhost:3000`; the Vite frontend runs on `http://localhost:5173`. `GET /api/health` returns `200` both directly and through the Vite proxy, with `database.status: up`.
+- The repository is on `master`; `5a3c029` added Package 11, `5875bb8` added Package 12 and `0aff7e4` added Package 13. No remote push is performed.
 
 ## 1. PostgreSQL role and database (needed only on a fresh machine)
 
@@ -68,11 +68,14 @@ Checked-in migrations, in order:
 | `20261120100000_business_modules` | Deals/finance/document/maintenance fields, two new tables, indexes and FKs | Applied |
 | `20261121130000_phase3_4_5_notifications_owners_gallery` | Notification/Owner/PropertyImage columns, indexes and FKs | Applied |
 | `20261122000000_registration_approval_account_status` | `AccountStatus` enum, backfill and enforcement on `User` | Applied |
-| `20261123000000_lead_match_criteria` | Seven nullable `Lead` criteria columns; drops leftover DB defaults on four `updatedAt` columns so they match Prisma's `@updatedAt` | **Pending** |
+| `20261123000000_lead_match_criteria` | Seven nullable `Lead` criteria columns; drops leftover DB defaults on four `updatedAt` columns so they match Prisma's `@updatedAt` | Applied |
+| `20261123120000_package5_fx_share_reminders` | Managed FX rates, public share links and reminder fields | Applied |
+| `20261123130000_package6_followups_commissions_leases` | Lead follow-up notes, commission statements and lease renewal tracking | Applied |
+| `20261124000000_package8_9_imports_installments_expenses` | Import metadata, installment fields and maintenance-linked expenses | Applied |
 
-`20261123000000_lead_match_criteria` was generated from an authoritative `prisma migrate diff` between the live database and `prisma/schema.prisma`, because this database role cannot create the shadow database that `migrate dev --create-only` requires (P3014). Its SQL is additive: `ALTER TABLE "Lead" ADD COLUMN` for `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`, plus `ALTER COLUMN "updatedAt" DROP DEFAULT` on `Commission`, `Expense`, `Payment` and `PropertyImage`. Existing rows keep their data.
+`20261123000000_lead_match_criteria` was generated from an authoritative `prisma migrate diff` because this role cannot create a shadow database (P3014). Its SQL is additive: `ALTER TABLE "Lead" ADD COLUMN` for `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`, plus `ALTER COLUMN "updatedAt" DROP DEFAULT` on four tables. Existing rows keep their data. All eight checked-in migrations are now applied.
 
-Apply the pending migration with one of:
+Apply any future migration with one of:
 
 ```powershell
 # Production / shared databases (recommended here; applies checked-in migrations only)
@@ -117,7 +120,7 @@ Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`; `C
 npm run verify
 ```
 
-This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **131 passed, 0 failed** from `node --test tests/**/*.test.js`.
+This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **142 passed, 0 failed** from `node --test tests/**/*.test.js`.
 
 Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Note that `auth-state.test.js`, `deal-workflow.test.js` and `user-authorization.test.js` create organization/user fixtures through Prisma and therefore require a live, migrated database; the other suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures.
 
@@ -141,10 +144,28 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 - **Package 9:** completing maintenance with a positive cost creates a single linked expense (`maintenanceRequestId` is unique). Reports expose funnel conversion and a 24-hour uncontacted-`NEW`-lead SLA with CSV export; reminders deduplicate by lead/day. Property list offers a Status Board with five columns and canonical transitions.
 - **Package 10:** login/register/public routes have dedicated in-memory limits returning `429` + `Retry-After`; all responses carry `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` and `X-Request-Id`, which is also logged on errors. `GET /api/health` probes PostgreSQL (`503` when down), reports uptime without secrets, and `GET /api/admin/export-snapshot` is ADMIN-only, tenant-scoped, paged and secret-free. List queries are audited for finite `take`. The only permitted exceptions are tenant-scoped ID lookups capped at 200 IDs and the ADMIN snapshot export, where `take`/`skip` are injected by the shared `paged()` helper.
 
+## Delivery packages 11–23 — verified status (2026-11-24)
+
+| Package | Status | Notes |
+| --- | --- | --- |
+| 11 | Committed as `5a3c029` | `tests/package11-smoke.test.js` exercises real ADMIN/AGENT tenant-scoped GET routes without seeding or destructive cleanup. |
+| 12 | Committed as `5875bb8` | `tests/package12-uploads.test.js` covers authenticated document/image upload, download, preview, archive and storage-key safety. |
+| 13 | Delivered | Dashboard has bilingual 7d/30d/90d/all range pills that scope cards by `createdAt`; the summary API accepts `range`/`from`/`to`; 768px scroll wrappers and 44px controls were added to the linked views. `tests/package13-dashboard-ux.test.js` covers this behavior. |
+| 14 | Partial | Gallery metadata (`caption`, `isPrimary`, `sortOrder`), reorder endpoint and cover controls already exist. Floorplan/brochure attachments do not. |
+| 15 | Partial | `Lead.source`, `budgetMin`, `budgetMax` exist for matching. Priority score and dedicated list filters do not. |
+| 16 | Partial | Deal transition guardrails and audit notifications exist. Closing checklist and override reasons do not. |
+| 17 | Partial | `Payment.dueAt`, installment schedules and balance math exist. Aging buckets and record-payment helpers do not. |
+| 18 | Partial | Owner statements and per-day reminder dedupe exist. Owner payout settlement and recurring maintenance intervals do not. |
+| 19 | Present, no dedicated commit | Advisory appointment conflict warnings plus list/agenda toggle; covered by `tests/appointments.test.js`. |
+| 20 | Not applicable | No brief, commit or code for Package 20 in this session. |
+| 21 | Absent | No Ctrl/Cmd+K palette or saved property filter presets. |
+| 22 | Absent | No webhook config, delivery log or outbound delivery service. |
+| 23 | Release readiness | Verification fixes, service restart/health verification and docs sync; no new domain feature. |
+
 Operational note: in-memory rate limits are per API process. Use shared storage or a gateway limit when running multiple instances. Snapshot export streams JSON only; never commit downloaded backups.
 
 ## Safety notes
 
 - No credentials, passwords, full connection strings or secret values are printed by helper scripts or in this document.
 - No database data is deleted or reset by any script or migration here; `prisma migrate reset` is prohibited.
-- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads and temp fixtures. `.env` was never staged. No commit, push or deployment was performed.
+- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads and temp fixtures. `.env` was never staged. Package 23 commits the verified working tree locally; it does not push or deploy.
