@@ -85,14 +85,14 @@
                       </span>
                       <span v-if="group.key === 'properties'" class="result-meta">
                         <span class="meta-price">{{ formatPrice(detail(item, 'price')) }}</span>
-                        <span class="meta-type">{{ detail(item, 'type') }}</span>
+                        <span class="meta-type">{{ valueLabel(detail(item, 'type')) }}</span>
                       </span>
                       <span v-else-if="group.key === 'leads'" class="result-meta">
-                        <span class="meta-status">{{ detail(item, 'status') }}</span>
+                        <span class="meta-status">{{ valueLabel(detail(item, 'status')) }}</span>
                       </span>
                       <span v-else-if="group.key === 'deals'" class="result-meta">
                         <span class="meta-price">{{ formatPrice(detail(item, 'amount')) }}</span>
-                        <span class="meta-type">{{ detail(item, 'type') }}</span>
+                        <span class="meta-type">{{ valueLabel(detail(item, 'type')) }}</span>
                       </span>
                     </span>
                   </button>
@@ -171,6 +171,33 @@ const resultGroups = computed<ResultGroup[]>(() => {
 })
 
 const navigableResults = computed(() => resultGroups.value.flatMap((group) => group.items))
+
+const VALUE_LABELS: Record<string, [string, string]> = {
+  HOUSE: ['House', 'منزل'],
+  APARTMENT: ['Apartment', 'شقة'],
+  CONDO: ['Condo', 'شقة مملوكة'],
+  TOWNHOUSE: ['Townhouse', 'منزل متصل'],
+  VILLA: ['Villa', 'فيلا'],
+  LAND: ['Land', 'أرض'],
+  COMMERCIAL: ['Commercial', 'تجاري'],
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة'],
+  SALE: ['Sale', 'بيع'],
+  RENT: ['Rent', 'إيجار']
+}
+
+function valueLabel(value: string): string {
+  if (!value) return ''
+  const pair = VALUE_LABELS[value]
+  if (pair) return ui.isArabic ? pair[1] : pair[0]
+  return value
+}
 
 function detail(item: SearchResult, key: string): string {
   const value = item.details?.[key]
@@ -324,7 +351,7 @@ onBeforeUnmount(() => {
 
 .search-icon {
   position: absolute;
-  left: 1rem;
+  inset-inline-start: 1rem;
   top: 50%;
   transform: translateY(-50%);
   color: #9ca3af;
@@ -333,7 +360,9 @@ onBeforeUnmount(() => {
 
 .search-input-wrapper input {
   width: 100%;
-  padding: 0.75rem 1rem 0.75rem 2.75rem;
+  padding-block: 0.75rem;
+  padding-inline-start: 2.75rem;
+  padding-inline-end: 1rem;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font-size: 1rem;
@@ -517,18 +546,8 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-/* RTL support */
-:global(.rtl) .search-input-wrapper input {
-  padding-left: 1rem;
-  padding-right: 2.75rem;
-}
-
-:global(.rtl) .search-icon {
-  left: auto;
-  right: 1rem;
-}
-
-:global(.rtl) .result-item.active {
+/* RTL support — the app sets dir="rtl" on <html>, not a .rtl class */
+:global(html[dir='rtl']) .result-item.active {
   transform: translateX(-4px);
 }
 

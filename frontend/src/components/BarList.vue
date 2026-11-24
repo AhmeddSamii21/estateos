@@ -11,9 +11,21 @@
 </template>
 
 <script setup lang="ts">
+import { useStore } from '@/stores'
+
 const props = defineProps<{ items: Array<{ label: string; value: number }>; max?: number }>()
+const store = useStore()
+
+const VALUE_LABELS: Record<string, string> = {
+  AVAILABLE: 'متاحة', UNDER_NEGOTIATION: 'قيد التفاوض', PENDING: 'قيد الانتظار',
+  RESERVED: 'محجوزة', SOLD: 'مباعة', RENTED: 'مؤجرة', OFF_MARKET: 'خارج السوق',
+  UNAVAILABLE: 'غير متاحة', HOUSE: 'منزل', APARTMENT: 'شقة', CONDO: 'شقة مملوكة',
+  TOWNHOUSE: 'منزل متصل', VILLA: 'فيلا', LAND: 'أرض', COMMERCIAL: 'تجاري',
+  OPEN: 'مفتوح', IN_PROGRESS: 'قيد التنفيذ', RESOLVED: 'تم حلها', CLOSED: 'مغلق'
+}
 
 function label(value: string): string {
+  if (store.isArabic && VALUE_LABELS[value]) return VALUE_LABELS[value]
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())
 }
 

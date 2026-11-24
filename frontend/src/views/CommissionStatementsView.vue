@@ -3,11 +3,7 @@
     <div class="page-head">
       <div>
         <h1>{{ store.isArabic ? 'كشوف العمولات' : 'Commission statements' }}</h1>
-        <p class="muted">
-          {{ isAgent
-            ? (store.isArabic ? 'عمولاتك حسب الحالة والعملة' : 'Your commissions by status and currency')
-            : (store.isArabic ? 'عمولات جميع الوكلاء حسب الحالة والعملة' : 'All agents’ commissions by status and currency') }}
-        </p>
+        <p class="muted">{{ pageSubtitle }}</p>
       </div>
       <div class="head-actions">
         <form class="date-form" @submit.prevent="load">
@@ -26,7 +22,19 @@
         <button class="btn btn-quiet" type="button" :disabled="exporting" @click="onExport">
           <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
         </button>
+        <button class="btn btn-quiet no-print" type="button" @click="onPrint">
+          <i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة / حفظ PDF' : 'Print / PDF' }}
+        </button>
       </div>
+    </div>
+
+    <div class="print-only print-brand">
+      <div class="print-brand-top">
+        <strong>EstateOS</strong>
+        <span>{{ printGeneratedAt }}</span>
+      </div>
+      <h1>{{ store.isArabic ? 'كشوف العمولات' : 'Commission statements' }}</h1>
+      <p>{{ pageSubtitle }} · {{ printRange }}</p>
     </div>
 
     <div v-if="loading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
@@ -117,12 +125,25 @@ interface Statement {
 
 const store = useStore()
 const isAgent = computed(() => store.user?.role === 'AGENT')
+const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
+const pageSubtitle = computed(() => isAgent.value
+  ? (store.isArabic ? 'عمولاتك حسب الحالة والعملة' : 'Your commissions by status and currency')
+  : (store.isArabic ? 'عمولات جميع الوكلاء حسب الحالة والعملة' : 'All agents’ commissions by status and currency'))
 const statement = ref<Statement | null>(null)
 const agents = ref<Array<{ id: string; label: string }>>([])
 const loading = ref(true)
 const exporting = ref(false)
 const error = ref('')
 const filters = reactive({ from: '', to: '', agentId: '', consolidated: false })
+
+const printRange = computed(() => {
+  const from = store.isArabic ? 'من' : 'From'
+  const to = store.isArabic ? 'إلى' : 'To'
+  if (filters.from && filters.to) return `${from}: ${filters.from} · ${to}: ${filters.to}`
+  if (filters.from) return `${from}: ${filters.from}`
+  if (filters.to) return `${to}: ${filters.to}`
+  return store.isArabic ? 'كل الفترات' : 'All dates'
+})
 
 const statuses: CommissionStatus[] = ['PENDING', 'APPROVED', 'PAID']
 
@@ -213,6 +234,10 @@ function money(amount: string | number, currency: string | null | undefined): st
   }
 }
 
+function onPrint(): void {
+  window.print()
+}
+
 function onExport(): void {
   if (exporting.value || !statement.value) return
   exporting.value = true
@@ -271,4 +296,11 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .state, .empty { padding: 3rem; text-align: center; background: #fff; border-radius: 12px; color: #6b7280; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.8rem; }
 .fx-note { margin: 0; font-size: 0.78rem; color: #6b7280; }
+.panel { overflow-x: auto; }
+@media (max-width: 768px) {
+  .panel { overflow-x: auto; }
+  table { min-width: 520px; }
+  .btn, input, select { min-height: 44px; }
+  th, td { white-space: nowrap; }
+}
 </style>

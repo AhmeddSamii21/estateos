@@ -202,7 +202,9 @@ async function onDownloadBackup(): Promise<void> {
     const response = await fetch('/api/admin/export-snapshot', {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
-    if (!response.ok) throw new Error(response.status === 403 ? 'Admin access is required.' : 'Snapshot export failed.')
+    if (!response.ok) throw new Error(store.isArabic
+      ? (response.status === 403 ? 'مطلوب صلاحيات المدير.' : 'تعذّر تصدير النسخة الاحتياطية.')
+      : (response.status === 403 ? 'Admin access is required.' : 'Snapshot export failed.'))
     const blob = await response.blob()
     const disposition = response.headers.get('Content-Disposition') || ''
     const filename = disposition.match(/filename="([^"]+)"/)?.[1] || 'estateos-snapshot.json'
@@ -232,7 +234,7 @@ async function onSave(): Promise<void> {
     try {
       data = JSON.parse(rawData.value || '{}')
     } catch {
-      throw new Error(store.isArabic ? 'Invalid JSON data.' : 'Invalid JSON data.')
+      throw new Error(store.isArabic ? 'بيانات JSON غير صالحة.' : 'Invalid JSON data.')
     }
     await apiPatch('/settings', {
       defaultLanguage: form.defaultLanguage,
@@ -304,7 +306,7 @@ async function onAddRate(): Promise<void> {
 
 function formatDate(value: string): string {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(store.isArabic ? 'ar' : 'en')
 }
 </script>
 

@@ -65,7 +65,7 @@
               <span class="field">{{ fieldLabel(change.field) }}</span>
               <template v-if="change.before !== undefined || change.after !== undefined">
                 <span class="old">{{ display(change.before) }}</span>
-                <span aria-hidden="true">→</span>
+                <span aria-hidden="true">{{ store.isArabic ? '←' : '→' }}</span>
                 <span class="new">{{ display(change.after) }}</span>
               </template>
               <span v-else class="muted">{{ store.isArabic ? 'تم التعديل' : 'changed' }}</span>

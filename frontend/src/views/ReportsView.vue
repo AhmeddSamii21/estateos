@@ -7,20 +7,24 @@
       </div>
       <div class="head-actions no-print">
         <form class="date-form" @submit.prevent="load">
-          <input v-model="filters.from" type="date" />
-          <input v-model="filters.to" type="date" />
+          <input v-model="filters.from" type="date" :aria-label="store.isArabic ? 'من' : 'From'" />
+          <input v-model="filters.to" type="date" :aria-label="store.isArabic ? 'إلى' : 'To'" />
           <button class="btn btn-primary" type="submit">{{ store.isArabic ? 'تطبيق' : 'Apply' }}</button>
         </form>
         <button class="btn btn-quiet" type="button" :disabled="exporting" @click="onExport">
           <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
         </button>
         <button class="btn btn-quiet" type="button" @click="onPrint">
-          <i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة' : 'Print' }}
+          <i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة / حفظ PDF' : 'Print / PDF' }}
         </button>
       </div>
     </div>
 
-    <div class="print-only">
+    <div class="print-only print-brand">
+      <div class="print-brand-top">
+        <strong>EstateOS</strong>
+        <span>{{ printGeneratedAt }}</span>
+      </div>
       <h1>{{ store.isArabic ? 'التقارير والتحليلات' : 'Reports & analytics' }}</h1>
       <p>{{ printRange }}</p>
     </div>
@@ -333,6 +337,8 @@ async function onDownloadUncontactedCsv(): Promise<void> {
   }
 }
 
+const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
+
 const printRange = computed(() => {
   const from = store.isArabic ? 'من' : 'From'
   const to = store.isArabic ? 'إلى' : 'To'
@@ -618,21 +624,3 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.8rem; }
 </style>
 
-<style>
-@media print {
-  @page { size: A4; margin: 12mm; }
-  body { background: #fff !important; color: #111827 !important; }
-  .sidebar, .topbar, .no-print, .overlay { display: none !important; }
-  .workspace { margin: 0 !important; padding: 0 !important; width: 100% !important; }
-  .print-only { display: block !important; margin-bottom: 0.8rem; }
-  .print-only h1 { font-size: 1.25rem; margin: 0 0 0.2rem; }
-  .print-only p { margin: 0; font-size: 0.85rem; color: #374151; }
-  .page { gap: 0.7rem !important; }
-  .panel, .stat, .columns section { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; border-color: #d1d5db !important; }
-  .columns { display: block !important; }
-  .columns section { margin-bottom: 0.7rem; }
-  .stats { grid-template-columns: repeat(3, 1fr) !important; }
-  thead { display: table-header-group; }
-  tr, .finance div { break-inside: avoid; page-break-inside: avoid; }
-}
-</style>

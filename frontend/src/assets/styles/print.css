@@ -1,0 +1,284 @@
+/* EstateOS print / save-as-PDF stylesheet.
+   Imported from main.ts because the app has no global stylesheet entry.
+   Screen-only helpers are hidden by default and revealed inside @media print. */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #app {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Chrome, navigation, dialogs, toasts and every interactive control. */
+  .sidebar,
+  .topbar,
+  .nav,
+  .notification-wrap,
+  .notification-panel,
+  .overlay:not(.print-statement-modal),
+  .modal-actions,
+  .no-print,
+  .head-actions,
+  .filters,
+  .date-form,
+  form,
+  .back,
+  .toast,
+  [role='alert'],
+  button,
+  input,
+  select,
+  textarea,
+  .map,
+  .gallery,
+  iframe,
+  canvas {
+    display: none !important;
+  }
+
+  .app-shell,
+  .workspace,
+  .content {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .page {
+    display: block !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  h1,
+  h2,
+  h3,
+  strong,
+  th {
+    color: #000 !important;
+  }
+
+  h1 {
+    font-size: 15pt !important;
+    margin: 0 0 0.5rem !important;
+  }
+
+  h2 {
+    font-size: 12pt !important;
+    margin: 0 0 0.4rem !important;
+  }
+
+  h3 {
+    font-size: 10.5pt !important;
+    margin: 0 0 0.35rem !important;
+  }
+
+  p,
+  span,
+  small,
+  dt,
+  dd,
+  td,
+  th,
+  .muted {
+    color: #222 !important;
+  }
+
+  a {
+    color: #000 !important;
+    text-decoration: none !important;
+  }
+
+  /* Cards become plain, ink-saving sections. */
+  .panel,
+  .card,
+  .stat,
+  .hero,
+  .summary,
+  .summary-card,
+  .statement-section,
+  .table-wrap,
+  .activity-panel {
+    background: #fff !important;
+    border: 0 !important;
+    border-block-end: 1px solid #bbb !important;
+    border-radius: 0 !important;
+    margin: 0 0 0.45rem !important;
+    padding: 0.4rem 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .badge,
+  .tag,
+  .status-pill,
+  .lease-pill {
+    background: transparent !important;
+    border: 1px solid #999 !important;
+    color: #000 !important;
+  }
+
+  .stats,
+  .summary-cards {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0.4rem !important;
+  }
+
+  .facts {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.3rem 0.8rem !important;
+  }
+
+  .summary div,
+  .funnel-stage,
+  .finance div {
+    background: #fff !important;
+    border: 0 !important;
+    padding: 0.2rem 0 !important;
+  }
+
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: fixed;
+    border-collapse: collapse !important;
+    font-size: 9pt;
+  }
+
+  th,
+  td {
+    border: 1px solid #bbb !important;
+    padding: 0.3rem 0.4rem !important;
+    text-align: start;
+    word-break: break-word;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f2f2f2 !important;
+    font-weight: 700;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tr,
+  thead,
+  .stat,
+  .summary-card,
+  .panel,
+  .statement-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-brand {
+    margin-bottom: 0.7rem;
+    padding-bottom: 0.4rem;
+    border-block-end: 2px solid #000;
+  }
+
+  .print-brand-top {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    font-size: 9pt;
+  }
+
+  .print-brand-top strong {
+    font-size: 11pt;
+    letter-spacing: 0.04em;
+  }
+
+  .print-brand h1 {
+    margin: 0.3rem 0 0 !important;
+    font-size: 14pt !important;
+  }
+
+  .print-brand p {
+    margin: 0.2rem 0 0 !important;
+    font-size: 9pt;
+  }
+
+  /* The owner statement lives in a modal on screen; promote only that one
+     to normal document flow for printing and hide all other dialogs. */
+  .overlay.print-statement-modal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    z-index: auto !important;
+  }
+
+  .print-statement-modal .modal {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .print-statement-modal .modal-head {
+    display: none !important;
+  }
+
+  .print-statement-modal .modal-body {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print-statement-modal .statement-subtitle {
+    padding: 0 !important;
+    margin: 0 0 0.4rem !important;
+  }
+}

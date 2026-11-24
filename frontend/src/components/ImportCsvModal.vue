@@ -1,34 +1,35 @@
 <template>
   <div v-if="open" class="overlay" @click.self="emit('close')">
-    <section class="modal" role="dialog" aria-modal="true" aria-label="Import CSV">
+    <section class="modal" role="dialog" aria-modal="true" :aria-label="t('Import CSV', 'استيراد CSV')">
       <div class="modal-head">
-        <h2>Import CSV</h2>
-        <button type="button" aria-label="Close" @click="emit('close')">×</button>
+        <h2>{{ t('Import CSV', 'استيراد CSV') }}</h2>
+        <button type="button" :aria-label="t('Close', 'إغلاق')" @click="emit('close')">×</button>
       </div>
 
       <div class="modal-body">
         <p class="muted">
-          {{ kind === 'properties' ? 'Import properties' : 'Import leads' }} from a CSV file.
-          Validate a preview before committing any rows.
+          {{ store.isArabic
+            ? `استيراد ${kind === 'properties' ? 'العقارات' : 'العملاء المحتملين'} من ملف CSV. تحقّق من المعاينة قبل إدخال أي صفوف.`
+            : `Import ${kind === 'properties' ? 'properties' : 'leads'} from a CSV file. Validate a preview before committing any rows.` }}
         </p>
 
         <button class="btn btn-quiet" type="button" @click="downloadTemplate">
-          <i class="fas fa-download"></i> Download template
+          <i class="fas fa-download"></i> {{ t('Download template', 'تنزيل القالب') }}
         </button>
 
         <label class="field">
-          <span>CSV file</span>
+          <span>{{ t('CSV file', 'ملف CSV') }}</span>
           <input type="file" accept=".csv,text/csv" @change="onFileChange" />
         </label>
 
         <label class="field">
-          <span>CSV contents</span>
-          <textarea v-model="csv" rows="8" spellcheck="false" placeholder="Paste CSV here or choose a file…"></textarea>
+          <span>{{ t('CSV contents', 'محتوى CSV') }}</span>
+          <textarea v-model="csv" rows="8" spellcheck="false" :placeholder="t('Paste CSV here or choose a file…', 'الصق محتوى CSV هنا أو اختر ملفاً…')"></textarea>
         </label>
 
         <div class="actions">
           <button class="btn btn-quiet" type="button" :disabled="busy || !csv.trim()" @click="onPreview">
-            {{ busy ? '…' : 'Preview / Validate' }}
+            {{ busy ? '…' : t('Preview / Validate', 'معاينة / تحقق') }}
           </button>
           <button
             class="btn btn-primary"
@@ -36,7 +37,7 @@
             :disabled="busy || !canCommit"
             @click="onCommit"
           >
-            {{ busy ? '…' : `Import ${preview?.validCount ?? 0} valid rows` }}
+            {{ busy ? '…' : (store.isArabic ? `استيراد ${preview?.validCount ?? 0} صف صالح` : `Import ${preview?.validCount ?? 0} valid rows`) }}
           </button>
         </div>
 
@@ -45,18 +46,18 @@
 
         <template v-if="preview">
           <div class="preview-summary">
-            <strong>{{ preview.validCount }} valid</strong>
-            <span>{{ preview.invalidCount }} invalid</span>
+            <strong>{{ preview.validCount }} {{ t('valid', 'صالح') }}</strong>
+            <span>{{ preview.invalidCount }} {{ t('invalid', 'غير صالح') }}</span>
           </div>
 
-          <div v-if="!preview.rows.length" class="small muted">No rows found in this CSV.</div>
+          <div v-if="!preview.rows.length" class="small muted">{{ t('No rows found in this CSV.', 'لا توجد صفوف في هذا الملف.') }}</div>
           <div v-else class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>#</th>
                   <th v-for="header in preview.headers" :key="header">{{ header }}</th>
-                  <th>Errors</th>
+                  <th>{{ t('Errors', 'الأخطاء') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -88,6 +89,7 @@ import {
   readFileAsText,
   type CsvImportPreview
 } from '@/utils/csvImport'
+import { useStore } from '@/stores'
 
 const props = defineProps<{
   open: boolean
@@ -104,8 +106,13 @@ const emit = defineEmits<{
   (event: 'commit', payload: { csv: string; dryRun: false }): void
 }>()
 
+const store = useStore()
 const csv = ref('')
 const localError = ref('')
+
+function t(english: string, arabic: string): string {
+  return store.isArabic ? arabic : english
+}
 
 const canCommit = computed(() =>
   (props.preview?.validCount ?? 0) > 0
@@ -138,7 +145,7 @@ async function onFileChange(event: Event): Promise<void> {
   try {
     csv.value = await readFileAsText(file)
   } catch (error) {
-    localError.value = error instanceof Error ? error.message : 'Could not read the selected file.'
+    localError.value = error instanceof Error ? error.message : t('Could not read the selected file.', 'تعذّر قراءة الملف المحدد.')
   }
 }
 

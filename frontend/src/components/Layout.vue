@@ -6,7 +6,7 @@
         <span>EstateOS</span>
       </router-link>
 
-      <nav class="nav" aria-label="Main navigation">
+      <nav class="nav" :aria-label="store.isArabic ? 'التنقل الرئيسي' : 'Main navigation'">
         <router-link to="/" class="nav-link">
           <i class="fas fa-gauge-high"></i><span>{{ t('Dashboard') }}</span>
         </router-link>
@@ -90,11 +90,11 @@
                 <select
                   v-model="notificationCategory"
                   class="notification-category"
-                  aria-label="Category"
+                  :aria-label="store.isArabic ? 'الفئة' : 'Category'"
                   @change="onCategoryChange"
                 >
                   <option value="">{{ store.isArabic ? 'الكل' : 'All' }}</option>
-                  <option v-for="item in NOTIFICATION_CATEGORIES" :key="item" :value="item">{{ item }}</option>
+                  <option v-for="item in NOTIFICATION_CATEGORIES" :key="item" :value="item">{{ notificationCategoryLabel(item) }}</option>
                 </select>
                 <button class="link" type="button" @click="markAll">{{ store.isArabic ? 'تحديد الكل كمقروء' : 'Mark all read' }}</button>
               </div>
@@ -103,7 +103,7 @@
                 <li v-for="item in store.notifications.slice(0, 8)" :key="item.id" :class="{ unread: !item.isRead }">
                   <button type="button" @click="openNotification(item)">
                     <span class="n-title">{{ item.title }}</span>
-                    <span class="n-category">{{ notificationCategoryOf(item.type) }}</span>
+                    <span class="n-category">{{ notificationCategoryLabel(notificationCategoryOf(item.type)) }}</span>
                     <span class="n-message">{{ item.message }}</span>
                     <span class="n-time">{{ formatNotificationTime(item.createdAt) }}</span>
                   </button>
@@ -132,7 +132,7 @@
       <div v-if="store.error" class="alert alert-error" role="alert">
         <i class="fas fa-circle-exclamation"></i>
         <span>{{ store.error }}</span>
-        <button type="button" aria-label="Dismiss" @click="store.error = null">×</button>
+        <button type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Dismiss'" @click="store.error = null">×</button>
       </div>
 
       <main class="content">
@@ -169,6 +169,16 @@ const notificationsOpen = ref(false)
 const notificationCategory = ref<'' | NotificationCategory>('')
 
 const ArabicLabels: Record<string, string> = {
+  Dashboard: 'لوحة التحكم',
+  'New Property': 'عقار جديد',
+  'Property Details': 'تفاصيل العقار',
+  'Edit Property': 'تعديل العقار',
+  'Deal Details': 'تفاصيل الصفقة',
+  'Reports & Analytics': 'التقارير والتحليلات',
+  'Advanced Search & Map': 'البحث المتقدم والخريطة',
+  'Property details': 'تفاصيل العقار',
+  'Not Found': 'غير موجود',
+  Login: 'تسجيل الدخول',
   Search: 'بحث',
   Properties: 'العقارات',
   'Search & Map': 'البحث والخريطة',
@@ -192,6 +202,21 @@ const ArabicLabels: Record<string, string> = {
   Settings: 'الإعدادات',
   Notifications: 'الإشعارات',
   Logout: 'تسجيل الخروج'
+}
+
+const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, [string, string]> = {
+  PROPERTY: ['Property', 'عقارات'],
+  LEAD: ['Lead', 'عملاء محتملون'],
+  DEAL: ['Deal', 'صفقات'],
+  APPOINTMENT: ['Appointment', 'مواعيد'],
+  MAINTENANCE: ['Maintenance', 'صيانة'],
+  FINANCE: ['Finance', 'مالية'],
+  SYSTEM: ['System', 'النظام']
+}
+
+function notificationCategoryLabel(category: NotificationCategory): string {
+  const pair = NOTIFICATION_CATEGORY_LABELS[category]
+  return store.isArabic ? pair[1] : pair[0]
 }
 
 function t(label: string): string {
@@ -329,7 +354,7 @@ onBeforeUnmount(() => {
   gap: 1rem;
   flex-wrap: wrap;
   background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  border-block-end: 1px solid #e5e7eb;
   padding: 0.9rem 1.5rem;
 }
 .topbar-title { font-size: 1.15rem; font-weight: 650; }
@@ -364,19 +389,19 @@ onBeforeUnmount(() => {
 .badge-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.68rem; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
 .notification-wrap { position: relative; }
 .notification-panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: min(360px, calc(100vw - 2rem)); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(15,23,42,0.12); z-index: 40; overflow: hidden; }
-.notification-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; padding: 0.7rem 0.9rem; border-bottom: 1px solid #eef2f7; }
+.notification-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; padding: 0.7rem 0.9rem; border-block-end: 1px solid #eef2f7; }
 .notification-head .link { background: none; border: 0; color: #4f46e5; cursor: pointer; font-size: 0.78rem; }
 .notification-category { max-width: 110px; border: 1px solid #d1d5db; border-radius: 6px; padding: 0.2rem 0.3rem; font-size: 0.72rem; }
 .notification-empty { padding: 1.2rem; color: #6b7280; font-size: 0.85rem; text-align: center; }
 .notification-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
-.notification-list li { border-bottom: 1px solid #f3f4f6; }
+.notification-list li { border-block-end: 1px solid #f3f4f6; }
 .notification-list li.unread { background: #f8faff; }
 .notification-list button { width: 100%; text-align: start; background: none; border: 0; padding: 0.7rem 0.9rem; cursor: pointer; display: flex; flex-direction: column; gap: 0.2rem; }
 .n-title { font-size: 0.84rem; font-weight: 600; color: #111827; }
 .n-category { font-size: 0.66rem; color: #3730a3; background: #eef2ff; border-radius: 999px; padding: 0.05rem 0.35rem; align-self: flex-start; }
 .n-message { font-size: 0.78rem; color: #4b5563; line-height: 1.4; }
 .n-time { font-size: 0.7rem; color: #6b7280; }
-.notification-footer { display: block; text-align: center; padding: 0.7rem; font-size: 0.82rem; color: #4f46e5; text-decoration: none; border-top: 1px solid #eef2f7; }
+.notification-footer { display: block; text-align: center; padding: 0.7rem; font-size: 0.82rem; color: #4f46e5; text-decoration: none; border-block-start: 1px solid #eef2f7; }
 
 @media (max-width: 860px) {
   .app-shell { flex-direction: column; }

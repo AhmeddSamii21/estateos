@@ -60,7 +60,7 @@
 
       <section v-if="hasCoordinates" class="card">
         <h3>{{ store.isArabic ? 'الموقع' : 'Location' }}</h3>
-        <div ref="mapElement" class="map" aria-label="Property location"></div>
+        <div ref="mapElement" class="map" :aria-label="store.isArabic ? 'موقع العقار' : 'Property location'"></div>
       </section>
 
       <footer class="public-foot">
@@ -104,10 +104,10 @@ async function load(): Promise<void> {
     const response = await fetch(`/api/public/properties/${encodeURIComponent(token.value)}`)
     if (!response.ok) throw new Error(store.isArabic ? 'الرابط غير صالح أو منتهي الصلاحية.' : 'This link is invalid or has expired.')
     const body = await response.json() as { success?: boolean; data?: PublicProperty; error?: { message?: string } }
-    if (!body.success || !body.data) throw new Error(body.error?.message || 'Link unavailable')
+    if (!body.success || !body.data) throw new Error(body.error?.message || (store.isArabic ? 'الرابط غير متاح' : 'Link unavailable'))
     property.value = body.data
   } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Link unavailable'
+    error.value = caught instanceof Error ? caught.message : (store.isArabic ? 'الرابط غير متاح' : 'Link unavailable')
   } finally {
     loading.value = false
   }
@@ -130,8 +130,35 @@ onBeforeUnmount(() => {
   map = null
 })
 
+const VALUE_LABELS: Record<string, [string, string]> = {
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة'],
+  HOUSE: ['House', 'منزل'],
+  APARTMENT: ['Apartment', 'شقة'],
+  CONDO: ['Condo', 'شقة مملوكة'],
+  TOWNHOUSE: ['Townhouse', 'منزل متصل'],
+  VILLA: ['Villa', 'فيلا'],
+  LAND: ['Land', 'أرض'],
+  COMMERCIAL: ['Commercial', 'تجاري'],
+  RESIDENTIAL: ['Residential', 'سكني'],
+  EXCELLENT: ['Excellent', 'ممتاز'],
+  GOOD: ['Good', 'جيد'],
+  FAIR: ['Fair', 'مقبول'],
+  POOR: ['Poor', 'ضعيف'],
+  NEEDS_RENOVATION: ['Needs renovation', 'يحتاج ترميماً']
+}
+
 function label(value: string | null | undefined): string {
-  return value ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase()) : '—'
+  if (!value) return '—'
+  const pair = VALUE_LABELS[value]
+  if (pair) return store.isArabic ? pair[1] : pair[0]
+  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
 function money(amount: string | number, currency: string): string {
@@ -145,7 +172,7 @@ function money(amount: string | number, currency: string): string {
 function formatDate(value: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(store.isArabic ? 'ar' : 'en')
 }
 </script>
 

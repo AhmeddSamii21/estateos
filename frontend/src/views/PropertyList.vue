@@ -41,7 +41,7 @@
         </select>
         <select v-if="bulkAction === 'status'" v-model="bulkStatus">
           <option value="">{{ store.isArabic ? 'اختر الحالة' : 'Select status' }}</option>
-          <option v-for="status in statuses" :key="status" :value="status">{{ status }}</option>
+          <option v-for="status in statuses" :key="status" :value="status">{{ statusLabel(status) }}</option>
         </select>
         <select v-if="bulkAction === 'assign'" v-model="bulkAgentId">
           <option value="">{{ store.isArabic ? 'بدون وكيل' : 'Unassigned' }}</option>
@@ -81,9 +81,9 @@
       </div>
 
       <div v-if="store.pagination.pages > 1" class="pager">
-        <button type="button" :disabled="page <= 1" @click="go(page - 1)">‹</button>
+        <button type="button" :disabled="page <= 1" @click="go(page - 1)">{{ store.isArabic ? '›' : '‹' }}</button>
         <span>{{ page }} / {{ store.pagination.pages }}</span>
-        <button type="button" :disabled="page >= store.pagination.pages" @click="go(page + 1)">›</button>
+        <button type="button" :disabled="page >= store.pagination.pages" @click="go(page + 1)">{{ store.isArabic ? '‹' : '›' }}</button>
       </div>
     </template>
 
@@ -112,7 +112,7 @@
                 :disabled="transitioningId === property.id"
                 @click="moveProperty(property, target)"
               >
-                {{ statusLabel(target) }} →
+                {{ statusLabel(target) }} {{ store.isArabic ? '←' : '→' }}
               </button>
             </div>
           </article>
@@ -171,10 +171,13 @@ const viewMode = ref<'list' | 'board'>('list')
 const boardStatuses = ['AVAILABLE', 'RESERVED', 'SOLD', 'RENTED', 'OFF_MARKET'] as const
 const boardStatusLabels: Record<string, { en: string; ar: string }> = {
   AVAILABLE: { en: 'Available', ar: 'متاحة' },
+  UNDER_NEGOTIATION: { en: 'Under negotiation', ar: 'قيد التفاوض' },
+  PENDING: { en: 'Pending', ar: 'قيد الانتظار' },
   RESERVED: { en: 'Reserved', ar: 'محجوزة' },
   SOLD: { en: 'Sold', ar: 'مباعة' },
   RENTED: { en: 'Rented', ar: 'مؤجرة' },
-  OFF_MARKET: { en: 'Off market', ar: 'خارج السوق' }
+  OFF_MARKET: { en: 'Off market', ar: 'خارج السوق' },
+  UNAVAILABLE: { en: 'Unavailable', ar: 'غير متاحة' }
 }
 interface PropertyBoard {
   columns?: Array<{ status: string; label?: string | null; count?: number }>
@@ -304,7 +307,9 @@ async function runBulk(): Promise<void> {
     if (bulkAction.value === 'assign') payload.assignedAgentId = bulkAgentId.value || null
     const response = await apiPost<{ action: string; total: number; succeeded: number; failed: number; results: Array<{ id: string; success: boolean; message: string }> }>('/properties/bulk', payload)
     const data = response.data
-    bulkMessage.value = response.message || `${data?.succeeded ?? 0}/${data?.total ?? 0} succeeded`
+    bulkMessage.value = response.message || (store.isArabic
+      ? `تم تنفيذ ${data?.succeeded ?? 0} من ${data?.total ?? 0} عملية بنجاح`
+      : `${data?.succeeded ?? 0}/${data?.total ?? 0} succeeded`)
     bulkResults.value = data?.results ?? []
     selectedIds.value = []
     await store.fetchProperties({ ...store.activeFilters, page: page.value, limit: 20 })

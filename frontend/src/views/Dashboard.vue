@@ -42,7 +42,7 @@
       <section v-if="leaseRenewals.length" class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'تجديدات الإيجار' : 'Lease renewals' }}</h2>
-          <router-link to="/deals">{{ store.isArabic ? 'عرض الصفقات' : 'View deals' }} →</router-link>
+          <router-link to="/deals">{{ store.isArabic ? 'عرض الصفقات' : 'View deals' }} {{ store.isArabic ? '←' : '→' }}</router-link>
         </div>
         <div class="rows">
           <router-link v-for="lease in leaseRenewals" :key="lease.id" class="row lease-row" :to="`/deals/${lease.id}`">
@@ -57,13 +57,13 @@
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'أحدث العقارات' : 'Latest properties' }}</h2>
-          <router-link to="/properties">{{ store.isArabic ? 'عرض الكل' : 'View all' }} →</router-link>
+          <router-link to="/properties">{{ store.isArabic ? 'عرض الكل' : 'View all' }} {{ store.isArabic ? '←' : '→' }}</router-link>
         </div>
         <div v-if="recent.length" class="rows">
           <router-link v-for="property in recent" :key="property.id" class="row" :to="`/properties/${property.id}`">
             <span class="ref">{{ property.referenceNumber }}</span>
             <span class="title">{{ property.title }}</span>
-            <span class="tag">{{ property.status.replaceAll('_', ' ') }}</span>
+            <span class="tag">{{ statusLabel(property.status) }}</span>
             <strong>{{ money(property.price, property.currency) }}</strong>
           </router-link>
         </div>
@@ -171,6 +171,23 @@ const baseTotals = computed(() => {
   }
 })
 
+const PROPERTY_STATUS_LABELS: Record<string, [string, string]> = {
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة']
+}
+
+function statusLabel(status: string): string {
+  const pair = PROPERTY_STATUS_LABELS[status]
+  if (pair) return store.isArabic ? pair[1] : pair[0]
+  return status.replaceAll('_', ' ')
+}
+
 function leaseStateLabel(state: LeaseRenewalState): string {
   const labels: Record<LeaseRenewalState, [string, string]> = {
     expired: ['Expired', 'منتهي'],
@@ -246,10 +263,10 @@ h2 { margin: 0; font-size: 1.05rem; }
 .base-totals { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; align-items: center; margin-top: -0.4rem; padding: 0.7rem 1rem; background: #eef2ff; border-radius: 10px; font-size: 0.82rem; color: #3730a3; }
 .base-totals small { color: #6b7280; }
 .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.2rem; border-bottom: 1px solid #eef2f7; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.2rem; border-block-end: 1px solid #eef2f7; }
 .panel-head a { color: #4f46e5; font-size: 0.84rem; text-decoration: none; }
 .rows { display: flex; flex-direction: column; }
-.row { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 0.8rem; align-items: center; padding: 0.8rem 1.2rem; border-bottom: 1px solid #f3f4f6; color: #374151; text-decoration: none; font-size: 0.88rem; }
+.row { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 0.8rem; align-items: center; padding: 0.8rem 1.2rem; border-block-end: 1px solid #f3f4f6; color: #374151; text-decoration: none; font-size: 0.88rem; }
 .row:hover { background: #f9fafb; }
 .ref { color: #6b7280; font-size: 0.78rem; }
 .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -29,7 +29,27 @@ const props = defineProps<{ property: Property }>()
 const emit = defineEmits<{ select: [property: Property] }>()
 const store = useStore()
 
+const VALUE_LABELS: Record<string, [string, string]> = {
+  HOUSE: ['House', 'منزل'],
+  APARTMENT: ['Apartment', 'شقة'],
+  CONDO: ['Condo', 'شقة مملوكة'],
+  TOWNHOUSE: ['Townhouse', 'منزل متصل'],
+  VILLA: ['Villa', 'فيلا'],
+  LAND: ['Land', 'أرض'],
+  COMMERCIAL: ['Commercial', 'تجاري'],
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة']
+}
+
 function label(value: string): string {
+  const pair = VALUE_LABELS[value]
+  if (pair) return store.isArabic ? pair[1] : pair[0]
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
 }
 

@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-head">
-      <router-link to="/properties" class="back">← {{ store.isArabic ? 'العودة للقائمة' : 'Back to list' }}</router-link>
+      <router-link to="/properties" class="back">{{ store.isArabic ? '→' : '←' }} {{ store.isArabic ? 'العودة للقائمة' : 'Back to list' }}</router-link>
       <div class="head-actions">
         <button v-if="property" class="btn btn-quiet" type="button" :disabled="sharing" @click="onShareSummary">
           <i class="fas fa-share-from-square"></i>
@@ -14,11 +14,11 @@
           <router-link class="btn btn-quiet" :to="`/properties/${property.id}/edit`">
             <i class="fas fa-pen"></i> {{ store.isArabic ? 'تعديل' : 'Edit' }}
           </router-link>
-                    <div class="delete-wrap">
+          <div class="delete-wrap">
             <button class="btn btn-danger" type="button" :disabled="store.loading" @click="onDelete">
-              <i class="fas fa-trash"></i> {{ confirmDelete ? (store.isArabic ? '????? ???????' : 'Confirm archive') : (store.isArabic ? '?????' : 'Archive') }}
+              <i class="fas fa-trash"></i> {{ confirmDelete ? (store.isArabic ? 'تأكيد الأرشفة' : 'Confirm archive') : (store.isArabic ? 'أرشفة' : 'Archive') }}
             </button>
-            <small v-if="confirmDelete" class="confirm-hint">{{ store.isArabic ? '???? ??? ???? ???????' : 'Click again to confirm' }}</small>
+            <small v-if="confirmDelete" class="confirm-hint">{{ store.isArabic ? 'انقر مرة أخرى للتأكيد' : 'Click again to confirm' }}</small>
           </div>
         </template>
       </div>
@@ -67,7 +67,7 @@
             : 'Anyone with the link can view the property without signing in. Rotate or revoke it at any time.' }}
         </p>
         <div v-if="shareLink?.enabled" class="share-controls">
-          <input :value="shareLink.url || ''" readonly aria-label="Share URL" @focus="selectSharePreview" />
+          <input :value="shareLink.url || ''" readonly :aria-label="store.isArabic ? 'رابط المشاركة' : 'Share URL'" @focus="selectSharePreview" />
           <button class="btn btn-quiet" type="button" :disabled="shareBusy" @click="onCopyShareLink">{{ store.isArabic ? 'نسخ' : 'Copy' }}</button>
           <button class="btn btn-quiet" type="button" :disabled="shareBusy" @click="onRotateShareLink">{{ store.isArabic ? 'تدوير' : 'Rotate' }}</button>
           <button class="btn btn-danger" type="button" :disabled="shareBusy" @click="onRevokeShareLink">{{ store.isArabic ? 'إلغاء' : 'Revoke' }}</button>
@@ -111,12 +111,12 @@
           <li v-for="entry in priceHistory" :key="entry.id">
             <div class="price-change-head">
               <strong>{{ money(entry.oldPrice, entry.oldCurrency) }}</strong>
-              <span aria-hidden="true">→</span>
+              <span aria-hidden="true">{{ store.isArabic ? '←' : '→' }}</span>
               <strong class="new-price">{{ money(entry.newPrice, entry.newCurrency) }}</strong>
               <time :datetime="entry.timestamp">{{ formatDate(entry.timestamp) }}</time>
             </div>
             <p v-if="entry.oldCurrency !== entry.newCurrency" class="currency-change">
-              {{ store.isArabic ? 'تغيّر العملة' : 'Currency changed' }}: {{ entry.oldCurrency }} → {{ entry.newCurrency }}
+              {{ store.isArabic ? 'تغيّر العملة' : 'Currency changed' }}: {{ entry.oldCurrency }} {{ store.isArabic ? '←' : '→' }} {{ entry.newCurrency }}
             </p>
           </li>
         </ol>
@@ -160,7 +160,7 @@
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'الوثائق' : 'Documents' }}</h2>
-          <router-link to="/documents">{{ store.isArabic ? 'إدارة الوثائق' : 'Manage documents' }} →</router-link>
+          <router-link to="/documents">{{ store.isArabic ? 'إدارة الوثائق' : 'Manage documents' }} {{ store.isArabic ? '←' : '→' }}</router-link>
         </div>
         <div v-if="!property.linkedDocuments?.length" class="empty">{{ store.isArabic ? 'لا توجد وثائق مرتبطة.' : 'No linked documents.' }}</div>
         <div v-else class="list">
@@ -176,7 +176,7 @@
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'الصيانة' : 'Maintenance' }}</h2>
-          <router-link to="/maintenance">{{ store.isArabic ? 'كل الطلبات' : 'All requests' }} →</router-link>
+          <router-link to="/maintenance">{{ store.isArabic ? 'كل الطلبات' : 'All requests' }} {{ store.isArabic ? '←' : '→' }}</router-link>
         </div>
         <div v-if="!property.maintenanceRequests?.length" class="empty">{{ store.isArabic ? 'لا توجد طلبات صيانة.' : 'No maintenance requests.' }}</div>
         <div v-else class="list">
@@ -259,14 +259,57 @@ const TRANSITIONS: Record<string, string[]> = {
 
 const statusOptions = computed(() => TRANSITIONS[property.value?.status || ''] || [property.value?.status || 'AVAILABLE'])
 
+const VALUE_LABELS: Record<string, [string, string]> = {
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة'],
+  HOUSE: ['House', 'منزل'],
+  APARTMENT: ['Apartment', 'شقة'],
+  CONDO: ['Condo', 'شقة مملوكة'],
+  TOWNHOUSE: ['Townhouse', 'منزل متصل'],
+  VILLA: ['Villa', 'فيلا'],
+  LAND: ['Land', 'أرض'],
+  COMMERCIAL: ['Commercial', 'تجاري'],
+  RESIDENTIAL: ['Residential', 'سكني'],
+  MIXED_USE: ['Mixed use', 'استخدام مختلط'],
+  EXCELLENT: ['Excellent', 'ممتاز'],
+  GOOD: ['Good', 'جيد'],
+  FAIR: ['Fair', 'مقبول'],
+  POOR: ['Poor', 'ضعيف'],
+  NEEDS_RENOVATION: ['Needs renovation', 'يحتاج ترميماً'],
+  VACANT: ['Vacant', 'شاغر'],
+  OCCUPIED: ['Occupied', 'مشغول'],
+  OWNER_OCCUPIED: ['Owner occupied', 'مشغول من المالك'],
+  TENANT_OCCUPIED: ['Tenant occupied', 'مشغول من مستأجر'],
+  LOW: ['Low', 'منخفضة'],
+  MEDIUM: ['Medium', 'متوسطة'],
+  HIGH: ['High', 'عالية'],
+  URGENT: ['Urgent', 'عاجلة'],
+  DRAFT: ['Draft', 'مسودة'],
+  ACTIVE: ['Active', 'نشطة'],
+  COMPLETED: ['Completed', 'مكتملة'],
+  CANCELLED: ['Cancelled', 'ملغية'],
+  CLOSED: ['Closed', 'مغلقة'],
+  OPEN: ['Open', 'مفتوح'],
+  IN_PROGRESS: ['In progress', 'قيد التنفيذ'],
+  RESOLVED: ['Resolved', 'تم حلها']
+}
+
 function label(value: string): string {
+  const pair = VALUE_LABELS[value]
+  if (pair) return store.isArabic ? pair[1] : pair[0]
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
 function formatDate(value?: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(store.isArabic ? 'ar' : 'en')
 }
 
 function money(amount: string | number, currency: string): string {
@@ -566,7 +609,7 @@ onBeforeUnmount(() => { revokeImageUrls() })
 h1 { margin: 0.5rem 0 0.2rem; font-size: 1.5rem; }
 h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .muted { color: #6b7280; margin: 0; font-size: 0.86rem; }
-.price { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.price { display: flex; flex-direction: column; align-items: end; gap: 0.4rem; }
 .price strong { font-size: 1.5rem; color: #4338ca; }
 .badge, .tag { font-size: 0.7rem; color: #3730a3; background: #e0e7ff; padding: 0.2rem 0.6rem; border-radius: 999px; }
 .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.3rem; }
@@ -590,16 +633,16 @@ h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .facts dd { margin: 0.2rem 0 0; font-weight: 600; font-size: 0.92rem; }
 .description { color: #374151; line-height: 1.7; white-space: pre-wrap; }
 .list { display: flex; flex-direction: column; }
-.list-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.65rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.86rem; color: #374151; text-decoration: none; }
+.list-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.65rem 0; border-block-end: 1px solid #f3f4f6; font-size: 0.86rem; color: #374151; text-decoration: none; }
 .list-row span:first-child { flex: 1; }
 .link { background: none; border: 0; color: #4f46e5; cursor: pointer; font-size: 0.82rem; }
 .empty, .state { padding: 1.2rem; text-align: center; color: #6b7280; font-size: 0.88rem; background: #fff; border-radius: 12px; }
 .timeline { list-style: none; padding: 0; margin: 0; }
-.timeline li { padding: 0.6rem 0 0.6rem 1rem; border-inline-start: 2px solid #c7d2fe; position: relative; font-size: 0.86rem; }
+.timeline li { padding-block: 0.6rem; padding-inline-start: 1rem; border-inline-start: 2px solid #c7d2fe; position: relative; font-size: 0.86rem; }
 .timeline li span { color: #6b7280; font-size: 0.76rem; margin-inline-start: 0.6rem; }
 .timeline li p { margin: 0.2rem 0 0; color: #4b5563; }
 .price-timeline { list-style: none; margin: 0; padding: 0; }
-.price-timeline li { padding: 0.55rem 0 0.55rem 0.9rem; border-inline-start: 2px solid #c7d2fe; }
+.price-timeline li { padding-block: 0.55rem; padding-inline-start: 0.9rem; border-inline-start: 2px solid #c7d2fe; }
 .price-timeline li:last-child { border-inline-start-color: transparent; }
 .price-change-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; font-size: 0.9rem; }
 .price-change-head strong { color: #6b7280; text-decoration: line-through; }

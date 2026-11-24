@@ -100,7 +100,33 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(store.isArabic ? 'ar' : 'en')
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  PROPERTY: 'عقارات',
+  LEAD: 'عملاء محتملون',
+  DEAL: 'صفقات',
+  APPOINTMENT: 'مواعيد',
+  MAINTENANCE: 'صيانة',
+  FINANCE: 'مالية',
+  SYSTEM: 'النظام'
+}
+
+const TYPE_WORD_LABELS: Record<string, string> = {
+  PROPERTY: 'عقار', LEAD: 'عميل محتمل', DEAL: 'صفقة', APPOINTMENT: 'موعد',
+  MAINTENANCE: 'صيانة', PAYMENT: 'دفعة', COMMISSION: 'عمولة', EXPENSE: 'مصروف',
+  CURRENCY: 'عملة', EXCHANGE: 'صرف', FX: 'صرف', DOCUMENT: 'وثيقة', OWNER: 'مالك',
+  CREATED: 'تم الإنشاء', UPDATED: 'تم التعديل', ARCHIVED: 'تمت الأرشفة',
+  RESTORED: 'تمت الاستعادة', STATUS: 'حالة', CHANGED: 'تغيير', RECORDED: 'تم التسجيل',
+  CONFIGURED: 'تم التحديد', PAID: 'مدفوعة', DUE: 'مستحق', RATE: 'سعر', UPCOMING: 'قادم',
+  EXPIRED: 'منتهي', OVERDUE: 'متأخر', ASSIGNED: 'تم الإسناد', GENERATED: 'تم الإنشاء'
+}
+
 function label(value: string): string {
+  const category = CATEGORY_LABELS[value]
+  if (category) return store.isArabic ? category : value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+  if (store.isArabic) {
+    const words = value.split('_').map((word) => TYPE_WORD_LABELS[word] || word.toLowerCase())
+    return `${words.join(' ')} (${value.replaceAll('_', ' ').toLowerCase()})`
+  }
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
 }
 </script>

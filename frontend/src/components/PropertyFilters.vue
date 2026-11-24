@@ -13,14 +13,14 @@
         <span>{{ store.isArabic ? 'النوع' : 'Type' }}</span>
         <select v-model="form.type">
           <option value="">—</option>
-          <option v-for="option in types" :key="option" :value="option">{{ option }}</option>
+          <option v-for="option in types" :key="option" :value="option">{{ optionLabel(option) }}</option>
         </select>
       </label>
       <label>
         <span>{{ store.isArabic ? 'الحالة' : 'Status' }}</span>
         <select v-model="form.status">
           <option value="">—</option>
-          <option v-for="option in statuses" :key="option" :value="option">{{ option }}</option>
+          <option v-for="option in statuses" :key="option" :value="option">{{ optionLabel(option) }}</option>
         </select>
       </label>
       <label>
@@ -62,6 +62,29 @@ const form = reactive({
 
 const types = ['HOUSE', 'APARTMENT', 'CONDO', 'TOWNHOUSE', 'VILLA', 'LAND', 'COMMERCIAL']
 const statuses = ['AVAILABLE', 'UNDER_NEGOTIATION', 'PENDING', 'RESERVED', 'SOLD', 'RENTED', 'OFF_MARKET', 'UNAVAILABLE']
+
+const OPTION_LABELS: Record<string, [string, string]> = {
+  HOUSE: ['House', 'منزل'],
+  APARTMENT: ['Apartment', 'شقة'],
+  CONDO: ['Condo', 'شقة مملوكة'],
+  TOWNHOUSE: ['Townhouse', 'منزل متصل'],
+  VILLA: ['Villa', 'فيلا'],
+  LAND: ['Land', 'أرض'],
+  COMMERCIAL: ['Commercial', 'تجاري'],
+  AVAILABLE: ['Available', 'متاحة'],
+  UNDER_NEGOTIATION: ['Under negotiation', 'قيد التفاوض'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  RESERVED: ['Reserved', 'محجوزة'],
+  SOLD: ['Sold', 'مباعة'],
+  RENTED: ['Rented', 'مؤجرة'],
+  OFF_MARKET: ['Off market', 'خارج السوق'],
+  UNAVAILABLE: ['Unavailable', 'غير متاحة']
+}
+
+function optionLabel(value: string): string {
+  const pair = OPTION_LABELS[value]
+  return store.isArabic && pair ? pair[1] : (pair ? pair[0] : value)
+}
 
 function onApply(): void {
   emit('apply', { ...form })

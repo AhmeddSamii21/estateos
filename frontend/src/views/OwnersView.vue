@@ -51,16 +51,16 @@
     </div>
 
     <div v-if="pagination.pages > 1" class="pager">
-      <button type="button" :disabled="page <= 1" @click="load(page - 1)">‹</button>
+      <button type="button" :disabled="page <= 1" @click="load(page - 1)">{{ store.isArabic ? '›' : '‹' }}</button>
       <span>{{ page }} / {{ pagination.pages }}</span>
-      <button type="button" :disabled="page >= pagination.pages" @click="load(page + 1)">›</button>
+      <button type="button" :disabled="page >= pagination.pages" @click="load(page + 1)">{{ store.isArabic ? '‹' : '›' }}</button>
     </div>
 
     <div v-if="formOpen" class="overlay" @click.self="closeForm">
       <form class="modal" @submit.prevent="save">
         <div class="modal-head">
           <h2>{{ editingId ? (store.isArabic ? 'تعديل مالك' : 'Edit owner') : (store.isArabic ? 'مالك جديد' : 'New owner') }}</h2>
-          <button type="button" aria-label="Close" @click="closeForm">×</button>
+          <button type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeForm">×</button>
         </div>
         <div class="modal-body">
           <label><span>{{ store.isArabic ? 'الاسم الأول' : 'First name' }}</span><input v-model="form.firstName" maxlength="100" /></label>
@@ -86,7 +86,7 @@
       <section class="modal">
         <div class="modal-head">
           <h2>{{ selected.displayName || [selected.firstName, selected.lastName].filter(Boolean).join(' ') || selected.companyName || (store.isArabic ? 'تفاصيل المالك' : 'Owner details') }}</h2>
-          <button type="button" aria-label="Close" @click="selected = null">×</button>
+          <button type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="selected = null">×</button>
         </div>
         <div class="modal-body details">
           <p><strong>{{ store.isArabic ? 'البريد' : 'Email' }}:</strong> {{ selected.email || '—' }}</p>
@@ -101,7 +101,7 @@
             <ul v-else class="prop-list">
               <li v-for="property in selected.properties" :key="property.id">
                 <router-link :to="`/properties/${property.id}`" @click="selected = null">
-                  {{ property.referenceNumber }} — {{ property.title }} ({{ property.status }})
+                  {{ property.referenceNumber }} — {{ property.title }} ({{ statusLabel(property.status) }})
                 </router-link>
               </li>
             </ul>
@@ -119,19 +119,31 @@
       </section>
     </div>
 
-    <div v-if="statementOpen" class="overlay" @click.self="closeStatement">
+    <div v-if="statementOpen" class="overlay print-statement-modal" @click.self="closeStatement">
       <section class="modal statement-modal">
         <div class="modal-head">
           <h2>{{ store.isArabic ? 'كشف المالك' : 'Owner Statement' }}</h2>
-          <button type="button" aria-label="Close" @click="closeStatement">×</button>
+          <button type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeStatement">×</button>
         </div>
         <div class="statement-subtitle muted">
           {{ statementOwner?.displayName || [statementOwner?.firstName, statementOwner?.lastName].filter(Boolean).join(' ') || statementOwner?.companyName || '—' }}
-          <span v-if="statement">· {{ new Date(statement.generatedAt).toLocaleString() }}</span>
+          <span v-if="statement">· {{ formatDate(statement.generatedAt) }}</span>
         </div>
         <div v-if="statementLoading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading statement…' }}</div>
         <div v-else-if="statementError" class="error inline-error">{{ statementError }}</div>
         <div v-else-if="statement" class="statement-body">
+          <div class="print-only print-brand">
+            <div class="print-brand-top">
+              <strong>EstateOS</strong>
+              <span>{{ printGeneratedAt }}</span>
+            </div>
+            <h1>{{ store.isArabic ? 'كشف المالك' : 'Owner portfolio statement' }}</h1>
+            <p>
+              {{ statementOwner?.displayName || [statementOwner?.firstName, statementOwner?.lastName].filter(Boolean).join(' ') || statementOwner?.companyName || '—' }}
+              <span v-if="statement">· {{ formatDate(statement.generatedAt) }}</span>
+            </p>
+          </div>
+
           <div class="summary-cards">
             <div class="summary-card">
               <span>{{ store.isArabic ? 'العقارات' : 'Properties' }}</span>
@@ -187,7 +199,7 @@
             <ul v-else class="prop-list">
               <li v-for="property in statement.properties.list" :key="property.id">
                 <router-link :to="`/properties/${property.id}`" @click="closeStatement">
-                  {{ property.referenceNumber }} — {{ property.title }} ({{ property.status }})
+                  {{ property.referenceNumber }} — {{ property.title }} ({{ statusLabel(property.status) }})
                 </router-link>
                 <span v-if="!statement.financialsRestricted && property.price !== undefined">
                   {{ property.price }} {{ property.currency }}
@@ -200,6 +212,9 @@
           <button class="btn btn-quiet" type="button" :disabled="!statement" @click="exportStatementCsv">
             <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
           </button>
+          <button class="btn btn-quiet no-print" type="button" :disabled="!statement" @click="onPrint">
+            <i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة / حفظ PDF' : 'Print / PDF' }}
+          </button>
           <button class="btn btn-primary" type="button" @click="closeStatement">{{ store.isArabic ? 'إغلاق' : 'Close' }}</button>
         </div>
       </section>
@@ -208,7 +223,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { useStore } from '@/stores'
@@ -216,6 +231,7 @@ import { ownerStatementCsv } from '@/utils/ownerStatementCsv'
 import type { Owner, OwnerStatement } from '@/types'
 
 const store = useStore()
+const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
 const rows = ref<Owner[]>([])
 const loadingState = ref(false)
 const saving = ref(false)
@@ -233,6 +249,27 @@ const statementOwner = ref<Owner | null>(null)
 const statement = ref<OwnerStatement | null>(null)
 const statementLoading = ref(false)
 const statementError = ref('')
+
+const PROPERTY_STATUS_LABELS: Record<string, string> = {
+  AVAILABLE: 'متاحة',
+  UNDER_NEGOTIATION: 'قيد التفاوض',
+  PENDING: 'قيد الانتظار',
+  RESERVED: 'محجوزة',
+  SOLD: 'مباعة',
+  RENTED: 'مؤجرة',
+  OFF_MARKET: 'خارج السوق',
+  UNAVAILABLE: 'غير متاحة'
+}
+
+function statusLabel(status: string): string {
+  if (store.isArabic) return PROPERTY_STATUS_LABELS[status] || status
+  return status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(store.isArabic ? 'ar' : 'en')
+}
 
 const emptyForm = () => ({
   firstName: '', lastName: '', companyName: '', email: '', phone: '', address: '', city: '', country: '', notes: '', isActive: true
@@ -340,6 +377,10 @@ function closeStatement(): void {
   statement.value = null
 }
 
+function onPrint(): void {
+  window.print()
+}
+
 function exportStatementCsv(): void {
   if (!statement.value) return
   const csv = ownerStatementCsv(statement.value)
@@ -424,5 +465,11 @@ input, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem
 .notice { background: #fffbeb; color: #92400e; border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.82rem; margin: 0; }
 .inline-error { margin: 1rem 1.2rem; }
 .prop-list li { display: flex; justify-content: space-between; gap: 0.75rem; }
+@media (max-width: 768px) {
+  .modal { padding: 0.5rem; }
+  .table-wrap, .statement-table { overflow-x: auto; }
+  .btn, .link, input, textarea { min-height: 44px; }
+  .head-actions { justify-content: flex-start; }
+}
 @media (max-width: 640px) { .modal-body.details { grid-template-columns: 1fr; } .search input { min-width: 140px; } .summary-cards { grid-template-columns: 1fr; } }
 </style>

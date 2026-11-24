@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <router-link to="/deals" class="back">← {{ store.isArabic ? 'العودة للصفقات' : 'Back to deals' }}</router-link>
+    <router-link to="/deals" class="back">{{ store.isArabic ? '→' : '←' }} {{ store.isArabic ? 'العودة للصفقات' : 'Back to deals' }}</router-link>
 
     <div v-if="loading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
     <div v-else-if="!deal" class="state">{{ store.isArabic ? 'الصفقة غير موجودة.' : 'Deal not found.' }}</div>
@@ -17,12 +17,24 @@
         </div>
         <div class="hero-actions">
           <strong>{{ money(deal.amount, deal.currency) }}</strong>
+          <button class="btn btn-quiet no-print" type="button" @click="onPrint">
+            <i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة / حفظ PDF' : 'Print / PDF' }}
+          </button>
           <select v-if="canEdit" :value="deal.status" @change="onStatusChange">
             <option v-for="status in statusOptions" :key="status" :value="status">{{ label(status) }}</option>
           </select>
           <span v-else class="status-pill" :class="statusClass(deal.status)">{{ label(deal.status) }}</span>
         </div>
       </header>
+
+      <div class="print-only print-brand">
+        <div class="print-brand-top">
+          <strong>EstateOS</strong>
+          <span>{{ printGeneratedAt }}</span>
+        </div>
+        <h1>{{ deal.property?.title || deal.propertyId }}</h1>
+        <p>{{ label(deal.type) }} · {{ deal.property?.city || '—' }} · {{ deal.referenceNumber || deal.id }}</p>
+      </div>
 
       <div v-if="actionError" class="error" role="alert">{{ actionError }}</div>
 
@@ -80,7 +92,7 @@
 
       <template v-if="store.canManageFinance">
         <section class="panel">
-          <h2>Installment calculator &amp; generator</h2>
+          <h2>{{ store.isArabic ? 'حاسبة الأقساط وإنشاء الجدول' : 'Installment calculator & generator' }}</h2>
           <form class="form-grid" @submit.prevent="generateInstallments">
             <label>
               <span>{{ store.isArabic ? 'الدفعة المقدمة' : 'Down payment' }}</span>
@@ -143,7 +155,7 @@
                   <tr v-for="row in installmentPreview.installments" :key="row.index">
                     <td>{{ row.index }}</td>
                     <td>{{ money(row.amount, deal.currency) }}</td>
-                    <td>{{ formatInstallmentDate(row.dueAt) }}</td>
+                    <td>{{ installmentDate(row.dueAt) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -251,7 +263,7 @@
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'الوثائق' : 'Documents' }}</h2>
-          <router-link to="/documents">{{ store.isArabic ? 'إدارة الوثائق' : 'Manage documents' }} →</router-link>
+          <router-link to="/documents">{{ store.isArabic ? 'إدارة الوثائق' : 'Manage documents' }} {{ store.isArabic ? '←' : '→' }}</router-link>
         </div>
         <div v-if="!deal.documents?.length" class="empty">{{ store.isArabic ? 'لا توجد وثائق.' : 'No documents linked.' }}</div>
         <div v-else class="list">
@@ -277,7 +289,6 @@ import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { dealTransitions } from '@/config/resources'
 import { downloadDocument } from '@/utils/documents'
 import {
-  formatInstallmentDate,
   INSTALLMENT_FREQUENCIES,
   previewInstallments,
   type InstallmentFrequency
@@ -290,6 +301,7 @@ type PaymentWithDueAt = Payment & { dueAt?: string | null }
 
 const store = useStore()
 const route = useRoute()
+const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
 const deal = ref<Deal | null>(null)
 const summary = ref<PaymentSummary | null>(null)
 const loading = ref(true)
@@ -329,10 +341,10 @@ const installmentState = computed(() => {
   const down = Number(installmentForm.downPayment || 0)
   const amount = Number(deal.value.amount || 0)
   if (!Number.isFinite(down) || down < 0) {
-    return { preview: null, warning: 'Enter a valid down payment.' }
+    return { preview: null, warning: store.isArabic ? 'أدخل مبلغ دفعة مقدمة صالحاً.' : 'Enter a valid down payment.' }
   }
   if (down > amount) {
-    return { preview: null, warning: 'Down payment cannot exceed the deal amount.' }
+    return { preview: null, warning: store.isArabic ? 'لا يمكن أن تتجاوز الدفعة المقدمة مبلغ الصفقة.' : 'Down payment cannot exceed the deal amount.' }
   }
   try {
     const preview = previewInstallments({
@@ -344,7 +356,7 @@ const installmentState = computed(() => {
     })
     return { preview, warning: '' }
   } catch (error) {
-    return { preview: null, warning: error instanceof Error ? error.message : 'Invalid installment details.' }
+    return { preview: null, warning: error instanceof Error ? error.message : (store.isArabic ? 'بيانات الأقساط غير صالحة.' : 'Invalid installment details.') }
   }
 })
 const installmentPreview = computed(() => installmentState.value.preview)
@@ -385,6 +397,10 @@ function statusClass(status: string): string {
   return `status-${status.toLowerCase().replaceAll('_', '-')}`
 }
 
+function onPrint(): void {
+  window.print()
+}
+
 onMounted(() => void load())
 
 async function load(): Promise<void> {
@@ -415,14 +431,42 @@ async function load(): Promise<void> {
   }
 }
 
+const VALUE_LABELS: Record<string, [string, string]> = {
+  DRAFT: ['Draft', 'مسودة'],
+  PENDING: ['Pending', 'قيد الانتظار'],
+  ACTIVE: ['Active', 'نشطة'],
+  COMPLETED: ['Completed', 'مكتملة'],
+  CANCELLED: ['Cancelled', 'ملغية'],
+  APPROVED: ['Approved', 'معتمدة'],
+  PAID: ['Paid', 'مدفوعة'],
+  FAILED: ['Failed', 'فاشلة'],
+  REFUNDED: ['Refunded', 'مستردة'],
+  SALE: ['Sale', 'بيع'],
+  RENT: ['Rent', 'إيجار'],
+  MONTHLY: ['Monthly', 'شهري'],
+  QUARTERLY: ['Quarterly', 'ربع سنوي'],
+  SEMI_ANNUAL: ['Semi-annual', 'نصف سنوي'],
+  ANNUAL: ['Annual', 'سنوي']
+}
+
 function label(value: string): string {
+  const pair = VALUE_LABELS[value]
+  if (pair) return store.isArabic ? pair[1] : pair[0]
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
 function formatDate(value?: string | null): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(store.isArabic ? 'ar' : 'en')
+}
+
+function installmentDate(value: string): string {
+  if (!value) return '—'
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value)
+  const date = dateOnly ? new Date(`${value}T00:00:00Z`) : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString(store.isArabic ? 'ar' : 'en', dateOnly ? { timeZone: 'UTC' } : undefined)
 }
 
 function money(amount: MoneyValue | null | undefined, currency: string | null | undefined): string {
@@ -586,7 +630,7 @@ async function onDownload(id: string, name: string): Promise<void> {
 h1 { margin: 0.5rem 0 0.2rem; font-size: 1.5rem; }
 h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .muted { color: #6b7280; margin: 0; font-size: 0.86rem; }
-.hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+.hero-actions { display: flex; flex-direction: column; align-items: end; gap: 0.4rem; }
 .hero-actions strong { font-size: 1.5rem; color: #4338ca; }
 .badge, .tag, .status-pill { font-size: 0.7rem; color: #3730a3; background: #e0e7ff; padding: 0.2rem 0.6rem; border-radius: 999px; }
 .status-draft { background: #f3f4f6; color: #4b5563; }
@@ -616,11 +660,11 @@ input, select { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem 0
 .btn { align-self: end; border: 0; border-radius: 8px; padding: 0.55rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
 .btn-primary { background: #4f46e5; color: #fff; }
 .list { display: flex; flex-direction: column; }
-.list-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 0; border-bottom: 1px solid #f3f4f6; font-size: 0.86rem; }
+.list-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 0; border-block-end: 1px solid #f3f4f6; font-size: 0.86rem; }
 .list-row span:first-child { flex: 1; }
 .link { background: none; border: 0; color: #4f46e5; cursor: pointer; }
 table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-th, td { text-align: start; padding: 0.55rem 0.6rem; border-bottom: 1px solid #f3f4f6; }
+th, td { text-align: start; padding: 0.55rem 0.6rem; border-block-end: 1px solid #f3f4f6; }
 th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .empty, .state { padding: 1.2rem; text-align: center; color: #6b7280; font-size: 0.88rem; background: #f9fafb; border-radius: 8px; }
 .timeline { list-style: none; padding: 0; margin: 0; }
@@ -630,7 +674,13 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .installment-warning { background: #fffbeb; color: #92400e; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
 .notice { background: #ecfdf5; color: #166534; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
-.table-wrap { max-height: 260px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 0.8rem; }
+.table-wrap { max-height: 260px; overflow: auto; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 0.8rem; }
 .table-wrap th { position: sticky; top: 0; background: #f9fafb; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .table-wrap { overflow-x: auto; }
+  table { min-width: 520px; }
+  .btn, input, select { min-height: 44px; }
+  .hero-actions, .panel-head { align-items: flex-start; flex-wrap: wrap; }
+}
 </style>
