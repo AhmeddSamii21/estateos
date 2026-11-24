@@ -32,6 +32,7 @@ import { logAudit, logPropertyActivity } from '../utils/audit'
 import { priceChangeMetadata, PROPERTY_PRICE_CHANGED } from '../utils/priceHistory'
 import { buildDuplicateDraft } from '../utils/propertyDuplication'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { createStorageKey, sanitizeOriginalName, validateDocumentFile, validateImageFile } from '../utils/files'
 import { readDocument, readPropertyImage, removeDocument, removePropertyImage, writeDocument, writePropertyImage } from '../storage/local'
 import { parseAttachmentKind, serializeAttachment, validateAttachmentUrl } from '../utils/propertyAttachments'
@@ -755,6 +756,25 @@ router.post('/', async (req, res, next) => {
       await logPropertyActivity(tx, { propertyId: created.id, userId, action: 'PROPERTY_CREATED' })
       await logAudit(tx, { userId, action: 'PROPERTY_CREATED', entityType: 'Property', entityId: created.id })
       return created
+    })
+    // Package 22: webhook fan-out runs after the core transaction and can never
+    // change this endpoint's response.
+    await dispatchWebhookEvent({
+      organizationId,
+      event: 'property.created',
+      entityId: property.id,
+      actorUserId: userId,
+      data: {
+        id: property.id,
+        referenceNumber: property.referenceNumber,
+        title: property.title,
+        type: property.type,
+        status: property.status,
+        classification: property.classification,
+        city: property.city,
+        price: property.price.toString(),
+        currency: property.currency
+      }
     })
     res.status(201).json({ success: true, data: property, message: 'Property created successfully' })
   } catch (error) {

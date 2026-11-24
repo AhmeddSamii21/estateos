@@ -129,6 +129,16 @@ enum DocumentStatus {
   ARCHIVED
 }
 
+// Package 22: outbound webhook delivery lifecycle. The four public event
+// codes live in backend/utils/webhookEvents.ts; this enum only tracks the
+// transport state of a single delivery attempt.
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
 // Package 14: property floorplans and brochures share the document table but
 // are distinguished by kind so existing document integrations stay unchanged.
 enum PropertyAttachmentKind {
@@ -215,6 +225,8 @@ model Organization {
   ownerPayouts  OwnerPayout[]
   maintenanceRequests MaintenanceRequest[]
   notifications Notification[]
+  webhookEndpoints WebhookEndpoint[]
+  webhookDeliveries WebhookDelivery[]
 }
 
 model Currency {
@@ -292,6 +304,8 @@ model User {
   commissions        Commission[]
   createdMaintenanceRequests MaintenanceRequest[] @relation("MaintenanceCreator")
   uploadedPropertyImages PropertyImage[] @relation("PropertyImageUploader")
+  webhookEndpointsCreated WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
+  webhookEndpointsUpdated WebhookEndpoint[] @relation("WebhookEndpointUpdatedBy")
 
   @@index([organizationId])
   @@index([role])
@@ -855,4 +869,61 @@ model MaintenanceRequest {
   @@index([createdAt])
   @@index([nextDueAt])
   @@index([recurrenceInterval])
+}
+
+// Package 22: tenant-owned outbound webhook subscriptions. Only a hash of the
+// generated signing secret is stored; the raw value is returned once at
+// creation and derived signing keys are never persisted.
+model WebhookEndpoint {
+  id             String    @id @default(uuid())
+  organizationId String
+  url            String
+  events         String[]
+  isActive       Boolean   @default(true)
+  secretHash     String
+  createdById    String
+  updatedById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User          @relation("WebhookEndpointCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User          @relation("WebhookEndpointUpdatedBy", fields: [updatedById], references: [id])
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+  @@index([createdAt])
+}
+
+// Package 22: one row per (endpoint, event) dispatch attempt. Payloads are
+// sanitized allowlists, response bodies are truncated, and no secret is stored.
+model WebhookDelivery {
+  id             String               @id @default(uuid())
+  organizationId String
+  endpointId     String
+  event          String
+  eventKey       String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempt        Int                  @default(0)
+  requestUrl     String
+  payload        Json
+  responseStatus Int?
+  responseBody   String?
+  error          String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deliveredAt    DateTime?
+  nextRetryAt    DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id])
+
+  @@unique([organizationId, endpointId, eventKey])
+  @@index([organizationId])
+  @@index([endpointId])
+  @@index([organizationId, status])
+  @@index([organizationId, event])
+  @@index([createdAt])
 }

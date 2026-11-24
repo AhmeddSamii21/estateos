@@ -22,6 +22,7 @@ import {
 import { commissionAmount, convertToBase, parseMoney, parseRate, receivedAmount } from '../utils/money'
 import { logAudit } from '../utils/audit'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { baseCurrencyOf, listExchangeRatesForOrg, resolveCurrency, summarizeCurrencyAmounts, upsertCurrencyRecord } from '../utils/fx'
 import {
   buildCommissionStatement,
@@ -414,6 +415,23 @@ router.post('/payments', async (req, res, next) => {
       return created
     })
 
+    // Package 22: webhook dispatch is outside the payment transaction and is
+    // fully contained, so payment API responses are unchanged.
+    await dispatchWebhookEvent({
+      organizationId,
+      event: 'payment.recorded',
+      entityId: payment.id,
+      actorUserId: userId,
+      data: {
+        id: payment.id,
+        dealId: payment.dealId,
+        amount: payment.amount.toString(),
+        baseAmount: payment.baseAmount?.toString() ?? null,
+        currency: payment.currency,
+        status: payment.status,
+        reference: payment.reference
+      }
+    })
     res.status(201).json({ success: true, data: withAging(payment), message: 'Payment recorded successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

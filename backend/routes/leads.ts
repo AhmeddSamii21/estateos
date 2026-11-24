@@ -8,6 +8,7 @@ import { leadScope, organizationIdOf, requireAnyRole, roleOf, userIdOf } from '.
 import { booleanValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { parseMoney } from '../utils/money'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { logAudit } from '../utils/audit'
 import { scoreLeadPropertyMatch } from '../utils/leadMatching'
 import { followUpWhere, nullableDateValue, type FollowUpBucket } from '../utils/followUps'
@@ -583,6 +584,22 @@ router.post('/', async (req, res, next) => {
       entityId: lead.id,
       actionUrl: `/leads`,
       metadata: { status: lead.status, assignedToId: lead.assignedToId, propertyId: lead.propertyId }
+    })
+    // Package 22: post-commit side effect only; failures are logged internally.
+    await dispatchWebhookEvent({
+      organizationId,
+      event: 'lead.created',
+      entityId: lead.id,
+      actorUserId: userIdOf(req),
+      data: {
+        id: lead.id,
+        firstName: lead.firstName,
+        lastName: lead.lastName,
+        status: lead.status,
+        source: lead.source,
+        assignedToId: lead.assignedToId,
+        propertyId: lead.propertyId
+      }
     })
     res.status(201).json({ success: true, data: lead, message: 'Lead created successfully' })
   } catch (error) {

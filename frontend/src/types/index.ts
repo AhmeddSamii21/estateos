@@ -700,3 +700,58 @@ export interface AppNotification {
   readAt?: string | null
   createdAt: string
 }
+
+/** Package 22: outbound webhook configuration and delivery log. */
+export const WEBHOOK_EVENT_CODES = [
+  'property.created',
+  'lead.created',
+  'deal.stage_changed',
+  'payment.recorded'
+] as const
+
+export type WebhookEventCode = (typeof WEBHOOK_EVENT_CODES)[number]
+export type WebhookDeliveryStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'RETRYING'
+
+export interface WebhookEndpoint {
+  id: string
+  organizationId: string
+  url: string
+  events: WebhookEventCode[]
+  isActive: boolean
+  createdById: string
+  updatedById: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface WebhookDelivery {
+  id: string
+  organizationId: string
+  endpointId: string
+  event: WebhookEventCode
+  eventKey: string
+  status: WebhookDeliveryStatus
+  attempt: number
+  requestUrl: string
+  payload: Record<string, unknown>
+  responseStatus: number | null
+  responseBody: string | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+  deliveredAt: string | null
+  nextRetryAt: string | null
+}
+
+export interface WebhookEndpointList {
+  data: WebhookEndpoint[]
+}
+
+export type WebhookDeliveryList = Paginated<WebhookDelivery>
+
+export interface WebhookEndpointCreated {
+  data: WebhookEndpoint
+  /** Raw signing secret, returned once and never available again. */
+  secret: string
+}

@@ -381,6 +381,11 @@ async function cleanup() {
       await tx.owner.deleteMany({ where: { id: { in: ownerIds } } })
     }
 
+    // Package 22: webhook deliveries reference endpoints and organizations;
+    // remove them before endpoints and users are deleted.
+    await tx.webhookDelivery.deleteMany({ where: orgIds.length ? organizationFilter : { id: { in: [] } } })
+    await tx.webhookEndpoint.deleteMany({ where: orgIds.length ? organizationFilter : { id: { in: [] } } })
+
     await tx.settings.deleteMany({ where: orgIds.length ? organizationFilter : { id: { in: [] } } })
     await tx.auditLog.deleteMany({
       where: {

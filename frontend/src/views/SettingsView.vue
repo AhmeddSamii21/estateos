@@ -75,6 +75,115 @@
         </div>
       </section>
 
+      <section v-if="!fxOnly && isAdmin()" class="card webhook-panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'ويب هوك صادرة' : 'Outbound webhooks' }}</h2>
+          <span class="muted">
+            {{ store.isArabic
+              ? 'أحداث المستأجر فقط — للمديرين فقط'
+              : 'Tenant-scoped events — administrators only' }}
+          </span>
+        </div>
+
+        <form class="grid webhook-form" @submit.prevent="onCreateWebhook">
+          <label class="full">
+            <span>{{ store.isArabic ? 'رابط الاستقبال (HTTPS أو HTTP محلي)' : 'Receiver URL (HTTPS or local HTTP)' }}</span>
+            <input v-model="webhookForm.url" type="url" maxlength="2048" required :placeholder="store.isArabic ? 'https://example.com/webhooks' : 'https://example.com/webhooks'" />
+          </label>
+          <div class="full">
+            <span class="field-label">{{ store.isArabic ? 'الأحداث' : 'Events' }}</span>
+            <div class="event-grid">
+              <label v-for="code in WEBHOOK_EVENT_CODES" :key="code" class="event-choice">
+                <input v-model="webhookForm.events" type="checkbox" :value="code" />
+                <code>{{ code }}</code>
+              </label>
+            </div>
+          </div>
+          <label class="event-choice align-end">
+            <input v-model="webhookForm.isActive" type="checkbox" />
+            <span>{{ store.isArabic ? 'مفعّل' : 'Active' }}</span>
+          </label>
+          <button class="btn btn-primary align-end" type="submit" :disabled="webhookSaving">
+            {{ webhookSaving ? '…' : (store.isArabic ? 'إضافة نقطة نهاية' : 'Add endpoint') }}
+          </button>
+        </form>
+
+        <div v-if="webhookSecretOnce" class="secret-once">
+          <strong>{{ store.isArabic ? 'سر التوقيع (يُعرض مرة واحدة فقط):' : 'Signing secret (shown once only):' }}</strong>
+          <code>{{ webhookSecretOnce }}</code>
+        </div>
+        <div v-if="webhookMessage" class="message" :class="{ error: webhookError }">{{ webhookMessage }}</div>
+
+        <h3 class="sub-title">{{ store.isArabic ? 'نقاط النهاية' : 'Endpoints' }}</h3>
+        <div v-if="webhookEndpoints.length" class="table-scroll">
+          <table class="table webhook-table">
+            <thead>
+              <tr>
+                <th>{{ store.isArabic ? 'الرابط' : 'URL' }}</th>
+                <th>{{ store.isArabic ? 'الأحداث' : 'Events' }}</th>
+                <th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th>
+                <th>{{ store.isArabic ? 'إجراء' : 'Action' }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="endpoint in webhookEndpoints" :key="endpoint.id">
+                <td><code>{{ endpoint.url }}</code></td>
+                <td>
+                  <span v-for="event in endpoint.events" :key="event" class="tag">{{ event }}</span>
+                </td>
+                <td>
+                  <span class="status-badge" :class="endpoint.isActive ? 'on' : 'off'">
+                    {{ endpoint.isActive ? (store.isArabic ? 'مفعّل' : 'Active') : (store.isArabic ? 'متوقف' : 'Disabled') }}
+                  </span>
+                </td>
+                <td>
+                  <button class="btn btn-quiet btn-small" type="button" :disabled="webhookSaving" @click="onToggleEndpoint(endpoint)">
+                    {{ endpoint.isActive
+                      ? (store.isArabic ? 'إيقاف' : 'Disable')
+                      : (store.isArabic ? 'تشغيل' : 'Enable') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="empty">{{ store.isArabic ? 'لا توجد نقاط نهاية بعد.' : 'No webhook endpoints yet.' }}</p>
+
+        <h3 class="sub-title">{{ store.isArabic ? 'سجل الإرسال' : 'Delivery log' }}</h3>
+        <div v-if="webhookDeliveries.length" class="table-scroll">
+          <table class="table webhook-table">
+            <thead>
+              <tr>
+                <th>{{ store.isArabic ? 'الحدث' : 'Event' }}</th>
+                <th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th>
+                <th>{{ store.isArabic ? 'المحاولة' : 'Attempt' }}</th>
+                <th>{{ store.isArabic ? 'الاستجابة' : 'Response' }}</th>
+                <th>{{ store.isArabic ? 'الوقت' : 'Created' }}</th>
+                <th>{{ store.isArabic ? 'إجراء' : 'Action' }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="delivery in webhookDeliveries" :key="delivery.id">
+                <td><code>{{ delivery.event }}</code></td>
+                <td>
+                  <span class="status-badge" :class="delivery.status.toLowerCase()">{{ delivery.status }}</span>
+                  <span v-if="delivery.error" class="delivery-error" :title="delivery.error">!</span>
+                </td>
+                <td>#{{ delivery.attempt }}</td>
+                <td>{{ delivery.responseStatus ?? '—' }}</td>
+                <td>{{ formatDate(delivery.createdAt) }}</td>
+                <td>
+                  <button class="btn btn-quiet btn-small" type="button" :disabled="webhookSaving" @click="onRetryDelivery(delivery)">
+                    {{ store.isArabic ? 'إعادة إرسال' : 'Retry' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="empty">{{ store.isArabic ? 'لا توجد عمليات إرسال بعد.' : 'No deliveries recorded yet.' }}</p>
+      </section>
+
       <section class="card">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'العملات المدارة' : 'Managed currencies' }}</h2>
@@ -183,7 +292,18 @@ import { onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPatch, apiPost, errorMessage, tokenStore } from '@/api/client'
 import { DEFAULT_PERMISSION_MATRIX, permissionLabel, roleLabel } from '@/config/permissions'
 import { useStore } from '@/stores'
-import type { ExchangeRateOverview, PermissionMatrix, TenantSettings } from '@/types'
+import {
+  WEBHOOK_EVENT_CODES,
+  type ExchangeRateOverview,
+  type PermissionMatrix,
+  type TenantSettings,
+  type WebhookDelivery,
+  type WebhookEndpoint,
+  type WebhookEndpointCreated,
+  type WebhookEndpointList,
+  type WebhookDeliveryList,
+  type WebhookEventCode
+} from '@/types'
 
 const props = defineProps<{ fxOnly?: boolean }>()
 const store = useStore()
@@ -203,6 +323,13 @@ const permissionMatrix = ref<PermissionMatrix>(DEFAULT_PERMISSION_MATRIX)
 const form = reactive({ defaultLanguage: 'en', defaultCurrency: 'USD' })
 const currencyForm = reactive({ code: '', name: '', symbol: '' })
 const rateForm = reactive({ fromCurrency: '', toCurrency: '', rate: '', effectiveAt: '' })
+const webhookEndpoints = ref<WebhookEndpoint[]>([])
+const webhookDeliveries = ref<WebhookDelivery[]>([])
+const webhookForm = reactive({ url: '', events: [] as WebhookEventCode[], isActive: true })
+const webhookSaving = ref(false)
+const webhookMessage = ref('')
+const webhookError = ref(false)
+const webhookSecretOnce = ref('')
 
 onMounted(async () => {
   try {
@@ -229,6 +356,7 @@ onMounted(async () => {
       rateForm.fromCurrency = form.defaultCurrency
       rateForm.toCurrency = fx.value?.baseCurrency || form.defaultCurrency
     }
+    if (!props.fxOnly && isAdmin()) await loadWebhooks()
   } catch (e) {
     isError.value = true
     fxError.value = true
@@ -350,6 +478,77 @@ async function onAddRate(): Promise<void> {
   }
 }
 
+function webhookReport(text: string, failed: boolean): void {
+  webhookMessage.value = text
+  webhookError.value = failed
+}
+
+async function loadWebhooks(): Promise<void> {
+  try {
+    const [endpoints, deliveries] = await Promise.all([
+      apiGet<WebhookEndpointList>('/webhooks/endpoints'),
+      apiGet<WebhookDeliveryList>('/webhooks/deliveries?limit=50')
+    ])
+    webhookEndpoints.value = endpoints.data.data
+    webhookDeliveries.value = deliveries.data.data
+  } catch (e) {
+    webhookReport(errorMessage(e), true)
+  }
+}
+
+async function onCreateWebhook(): Promise<void> {
+  webhookSaving.value = true
+  webhookReport('', false)
+  try {
+    if (!webhookForm.events.length) {
+      throw new Error(store.isArabic ? 'اختر حدثًا واحدًا على الأقل.' : 'Select at least one event.')
+    }
+    const created = await apiPost<WebhookEndpointCreated>('/webhooks/endpoints', {
+      url: webhookForm.url,
+      events: webhookForm.events,
+      isActive: webhookForm.isActive
+    })
+    webhookSecretOnce.value = created.data.secret
+    webhookForm.url = ''
+    webhookForm.events = []
+    webhookForm.isActive = true
+    webhookReport(store.isArabic ? 'تمت إضافة نقطة النهاية.' : 'Webhook endpoint added.', false)
+    await loadWebhooks()
+  } catch (e) {
+    webhookReport(errorMessage(e), true)
+  } finally {
+    webhookSaving.value = false
+  }
+}
+
+async function onToggleEndpoint(endpoint: WebhookEndpoint): Promise<void> {
+  webhookSaving.value = true
+  webhookReport('', false)
+  try {
+    await apiPatch(`/webhooks/endpoints/${endpoint.id}`, { isActive: !endpoint.isActive })
+    webhookReport(store.isArabic ? 'تم تحديث نقطة النهاية.' : 'Webhook endpoint updated.', false)
+    await loadWebhooks()
+  } catch (e) {
+    webhookReport(errorMessage(e), true)
+  } finally {
+    webhookSaving.value = false
+  }
+}
+
+async function onRetryDelivery(delivery: WebhookDelivery): Promise<void> {
+  webhookSaving.value = true
+  webhookReport('', false)
+  try {
+    await apiPost(`/webhooks/deliveries/${delivery.id}/retry`, {})
+    webhookReport(store.isArabic ? 'تمت إعادة إرسال التسليم.' : 'Delivery retried.', false)
+    await loadWebhooks()
+  } catch (e) {
+    webhookReport(errorMessage(e), true)
+  } finally {
+    webhookSaving.value = false
+  }
+}
+
 function formatDate(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(store.isArabic ? 'ar' : 'en')
@@ -389,4 +588,24 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .permission-mark { display: inline-block; min-width: 1.4rem; text-align: center; border-radius: 999px; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
 .permission-mark.allowed { background: #dcfce7; color: #166534; }
 .permission-mark.denied { background: #f3f4f6; color: #9ca3af; }
+.webhook-form { align-items: end; }
+.field-label { font-size: 0.8rem; color: #374151; }
+.event-grid { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.event-choice { flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
+.event-choice input { width: auto; }
+.webhook-table { min-width: 760px; }
+.webhook-table code { font-size: 0.78rem; word-break: break-all; }
+.status-badge { display: inline-block; border-radius: 999px; padding: 0.1rem 0.45rem; font-size: 0.68rem; background: #f3f4f6; color: #374151; }
+.status-badge.on, .status-badge.success { background: #dcfce7; color: #166534; }
+.status-badge.failed { background: #fef2f2; color: #991b1b; }
+.status-badge.retrying, .status-badge.pending { background: #fef9c3; color: #854d0e; }
+.status-badge.off { background: #f3f4f6; color: #6b7280; }
+.delivery-error { margin-inline-start: 0.3rem; color: #b91c1c; font-weight: 700; }
+.btn-small { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
+.secret-once { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1rem; padding: 0.7rem 0.8rem; border: 1px dashed #a5b4fc; border-radius: 8px; background: #eef2ff; font-size: 0.82rem; }
+.secret-once code { word-break: break-all; }
+@media (max-width: 640px) {
+  .event-grid { flex-direction: column; }
+  .webhook-form .btn { width: 100%; }
+}
 </style>

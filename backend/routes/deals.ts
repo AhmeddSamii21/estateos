@@ -11,6 +11,7 @@ import { logAudit, logPropertyActivity } from '../utils/audit'
 import { assertDealTransition, assertInitialDealStatus } from '../utils/dealStatus'
 import { listEntityActivity } from '../services/activity'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { nullableDateValue } from '../utils/followUps'
 import { buildInstallmentSchedule, installmentPaymentReferences, type InstallmentFrequency } from '../utils/installmentSchedule'
 import {
@@ -514,6 +515,9 @@ router.patch('/:id', async (req, res, next) => {
       ? enumValue(body.status, 'status', Object.values(DealStatus))
       : existing.status
     assertDealTransition(existing.status, nextStatus)
+    // Package 22: hoisted so the webhook can only fire after the transaction
+    // that actually committed the stage change.
+    const stageChanged = nextStatus !== existing.status
     if (body.closedAt !== undefined && nextStatus !== DealStatus.COMPLETED) {
       throw createError('closedAt can only be set when completing a deal', 400)
     }
@@ -603,7 +607,6 @@ router.patch('/:id', async (req, res, next) => {
       }
 
       const updated = await tx.deal.update({ where: { id }, data })
-      const stageChanged = nextStatus !== existing.status
       await logAudit(tx, {
         userId,
         action: stageChanged ? 'DEAL_STATUS_CHANGED' : 'DEAL_UPDATED',
@@ -653,6 +656,24 @@ router.patch('/:id', async (req, res, next) => {
       }
       return updated
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+    if (stageChanged) {
+      await dispatchWebhookEvent({
+        organizationId,
+        event: 'deal.stage_changed',
+        entityId: deal.id,
+        actorUserId: userId,
+        data: {
+          id: deal.id,
+          referenceNumber: deal.referenceNumber,
+          propertyId: deal.propertyId,
+          from: existing.status,
+          to: deal.status,
+          status: deal.status,
+          amount: deal.amount.toString(),
+          currency: deal.currency
+        }
+      })
+    }
     res.json({ success: true, data: deal, message: 'Deal updated successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
