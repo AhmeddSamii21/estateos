@@ -10,6 +10,11 @@ export interface AuthUser {
   statusReason?: string | null
   firstName?: string | null
   profileImage?: string | null
+  avatarUrl?: string | null
+  phone?: string | null
+  jobTitle?: string | null
+  preferredLang?: 'en' | 'ar'
+  defaultLanguage?: 'en' | 'ar'
   isActive?: boolean
   lastLoginAt?: string | null
   loginCount?: number
@@ -444,10 +449,24 @@ export interface AppUser {
   role: Role
   organizationId: string
   firstName?: string | null
+  profileImage?: string | null
+  avatarUrl?: string | null
+  phone?: string | null
+  jobTitle?: string | null
+  preferredLang?: 'en' | 'ar'
+  monthlyTargetAmount?: number | null
+  accountStatus?: 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED'
+  statusReason?: string | null
+  branchId?: string | null
+  teamId?: string | null
+  assignedCounts?: { leads: number; deals: number }
+  activeLeads?: number
+  activeDeals?: number
   isActive: boolean
   lastLoginAt?: string | null
   loginCount: number
   createdAt: string
+  deletedAt?: string | null
 }
 
 export interface TenantSettings {

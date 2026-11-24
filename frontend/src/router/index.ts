@@ -38,7 +38,8 @@ const routes = [
       { path: 'notifications', name: 'Notifications', component: () => import('@/views/NotificationsView.vue'), meta: { title: 'Notifications' } },
       { path: 'activity', name: 'Activity', component: () => import('@/views/ActivityView.vue'), meta: { title: 'Activity' } },
       { path: 'users', name: 'Users', component: () => import('@/views/ResourceView.vue'), props: { resource: 'users' }, meta: { title: 'Users', roles: ['ADMIN', 'MANAGER', 'TEAM_LEAD'] } },
-      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT', 'TEAM_LEAD'] } }
+      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT', 'TEAM_LEAD'] } },
+      { path: 'profile', name: 'Profile', component: () => import('@/views/ProfileView.vue'), meta: { title: 'My profile' } }
     ]
   },
   { path: '/p/:shareToken', name: 'PublicProperty', component: () => import('@/views/PublicPropertyView.vue'), meta: { title: 'Property details' } },

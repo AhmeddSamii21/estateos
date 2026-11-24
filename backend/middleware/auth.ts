@@ -15,6 +15,11 @@ declare global {
         organizationId: string
         firstName: string | null
         profileImage: string | null
+        avatarUrl?: string | null
+        phone?: string | null
+        jobTitle?: string | null
+        preferredLang?: string
+        monthlyTargetAmount?: unknown
         isActive: boolean
         lastLoginAt: Date | null
         loginCount: number
@@ -60,6 +65,11 @@ export const authMiddleware = async (req: Request, _res: Response, next: NextFun
         tokenVersion: true,
         firstName: true,
         profileImage: true,
+        avatarUrl: true,
+        phone: true,
+        jobTitle: true,
+        preferredLang: true,
+        monthlyTargetAmount: true,
         isActive: true,
         deletedAt: true,
         lastLoginAt: true,
@@ -88,6 +98,11 @@ export const authMiddleware = async (req: Request, _res: Response, next: NextFun
       organizationId: user.organizationId,
       firstName: user.firstName,
       profileImage: user.profileImage,
+      avatarUrl: user.avatarUrl,
+      phone: user.phone,
+      jobTitle: user.jobTitle,
+      preferredLang: user.preferredLang,
+      monthlyTargetAmount: user.monthlyTargetAmount,
       isActive: user.isActive,
       lastLoginAt: user.lastLoginAt,
       loginCount: user.loginCount,

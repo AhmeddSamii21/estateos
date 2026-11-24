@@ -339,7 +339,15 @@ model User {
   organizationId  String
   // Selected by backend/routes/properties.ts when including assignedAgent.
   firstName       String?
+  // Package 29: profileImage is the original avatar field. avatarUrl is the
+  // additive, validated URL used by the self-service profile screen.
   profileImage    String?
+  avatarUrl       String?
+  phone           String?
+  jobTitle        String?
+  preferredLang   String    @default("en")
+  // Package 30: monthly revenue target used by the performance leaderboard.
+  monthlyTargetAmount Decimal? @db.Decimal(14, 2)
   lastLoginAt     DateTime?
   loginCount      Int       @default(0)
 

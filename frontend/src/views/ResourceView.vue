@@ -90,6 +90,13 @@
       </label>
     </div>
 
+    <div v-if="isUsers && store.canManage" class="user-filters">
+      <label class="checkbox-line">
+        <input v-model="includeInactive" type="checkbox" />
+        <span>{{ store.isArabic ? 'عرض الحسابات المعطّلة' : 'Show deactivated accounts' }}</span>
+      </label>
+    </div>
+
     <div v-if="conflictWarning" class="warning" role="alert">
       <strong>{{ conflictWarning.message }}</strong>
       <ul v-if="conflictWarning.conflicts?.length">
@@ -221,6 +228,12 @@
                 <router-link v-if="isMaintenance && linkedExpenseId(row)" class="link" to="/finance/expenses">
                   {{ store.isArabic ? 'المصروف' : 'Expense' }}
                 </router-link>
+                <button v-if="isUsers && (!row.isActive || row.deletedAt)" type="button" class="link" @click="restoreUser(row)">
+                  {{ store.isArabic ? 'تفعيل' : 'Restore' }}
+                </button>
+                <button v-if="isUsers && store.user?.role === 'ADMIN'" type="button" class="link" @click="resetUserPassword(row)">
+                  {{ store.isArabic ? 'إعادة تعيين كلمة المرور' : 'Reset password' }}
+                </button>
                 <button type="button" class="link" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
                 <button v-if="canDelete" type="button" class="link danger" @click="onDelete(row)">
                   {{ store.isArabic ? 'حذف' : 'Delete' }}
@@ -378,6 +391,7 @@ const isDeals = computed(() => props.resource === 'deals')
 const isLeads = computed(() => props.resource === 'leads')
 const isPayments = computed(() => props.resource === 'payments')
 const isMaintenance = computed(() => props.resource === 'maintenance')
+const isUsers = computed(() => props.resource === 'users')
 
 type Row = Record<string, unknown> & { id: string }
 const rows = ref<Row[]>([])
@@ -407,6 +421,7 @@ const budgetMinFilter = ref('')
 const budgetMaxFilter = ref('')
 const sortFilter = ref('priority_desc')
 const agingFilter = ref('')
+const includeInactive = ref(false)
 const paymentAgingBuckets = PAYMENT_AGING_BUCKETS
 const prioritySaving = ref<string | null>(null)
 const priorityTiers = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const
@@ -509,6 +524,7 @@ watch([sourceFilter, priorityFilter, budgetMinFilter, budgetMaxFilter, sortFilte
   if (isLeads.value) void load()
 })
 watch(agingFilter, () => { if (isPayments.value) void load() })
+watch(includeInactive, () => { if (isUsers.value) void load() })
 
 onMounted(() => { void load(); applyQueryPrefill() })
 
@@ -518,6 +534,7 @@ async function load(): Promise<void> {
     const params: Record<string, string | number> = { limit: 100 }
     if (isDeals.value && statusFilter.value) params.status = statusFilter.value
     if (isPayments.value && agingFilter.value) params.aging = agingFilter.value
+    if (isUsers.value && includeInactive.value) params.includeInactive = true
     if (isLeads.value) {
       if (followUpFilter.value) params.followUp = followUpFilter.value
       if (sourceFilter.value.trim()) params.source = sourceFilter.value.trim()
@@ -878,6 +895,36 @@ async function onDelete(row: Row): Promise<void> {
   }
 }
 
+/** Package 30: ADMIN-only password reset; the target's sessions are revoked. */
+async function resetUserPassword(row: Row): Promise<void> {
+  const password = window.prompt(
+    store.isArabic ? 'كلمة المرور الجديدة للمستخدم (8 أحرف على الأقل، حرف ورقم):' : 'New user password (at least 8 characters, letter and number):'
+  )
+  if (!password) return
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    store.error = store.isArabic
+      ? 'يجب أن تتكون كلمة المرور من 8 أحرف على الأقل وتحتوي على حرف ورقم.'
+      : 'Password must be at least 8 characters and include a letter and a number.'
+    return
+  }
+  try {
+    await apiPatch(`${config.value.endpoint}/${row.id}`, { password })
+    await load()
+  } catch (e) {
+    store.error = errorMessage(e)
+  }
+}
+
+/** Package 30: reactivate a soft-deleted account without changing its role. */
+async function restoreUser(row: Row): Promise<void> {
+  try {
+    await apiPost(`${config.value.endpoint}/${row.id}/restore`, {})
+    await load()
+  } catch (e) {
+    store.error = errorMessage(e)
+  }
+}
+
 function readableStatus(value: string): string {
   return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (character) => character.toUpperCase())
 }
@@ -1014,6 +1061,8 @@ h2 { margin: 0; font-size: 1.15rem; }
 .status-pill { display: inline-block; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.72rem; background: #e0e7ff; color: #3730a3; }
 .aging-filters { display: flex; gap: 0.6rem; align-items: end; margin-bottom: 0.8rem; }
 .aging-filters label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: #374151; }
+.user-filters { display: flex; align-items: center; margin-bottom: 0.8rem; }
+.checkbox-line { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; color: #374151; }
 .aging-pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.72rem; background: #f3f4f6; color: #4b5563; }
 .aging-1_30_DAYS { background: #fef3c7; color: #92400e; }
 .aging-31_60_DAYS { background: #ffedd5; color: #9a3412; }

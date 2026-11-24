@@ -5,10 +5,29 @@ import { prisma } from '../prisma'
 import { authMiddleware, hashPassword, comparePassword } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { userIdOf } from '../utils/scope'
-import { optionalString, requiredString } from '../utils/validation'
+import { enumValue, optionalString, requiredString } from '../utils/validation'
 import { resolveOrganization } from '../utils/organization'
+import { logAudit } from '../utils/audit'
 
 const router = Router()
+
+function targetAmount(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount : null
+}
+
+function optionalAvatarUrl(value: unknown): string | undefined {
+  const url = optionalString(value, 'avatarUrl', 2048)
+  if (url === undefined) return undefined
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('invalid scheme')
+  } catch {
+    throw createError('avatarUrl must be a valid http(s) URL', 400)
+  }
+  return url
+}
 
 function safeUser(user: {
   id: string
@@ -19,6 +38,11 @@ function safeUser(user: {
   statusReason?: string | null
   firstName?: string | null
   profileImage?: string | null
+  avatarUrl?: string | null
+  phone?: string | null
+  jobTitle?: string | null
+  preferredLang?: string | null
+  monthlyTargetAmount?: unknown
   isActive?: boolean
   lastLoginAt?: Date | null
   loginCount?: number | null
@@ -33,6 +57,11 @@ function safeUser(user: {
     statusReason: user.statusReason ?? undefined,
     firstName: user.firstName ?? null,
     profileImage: user.profileImage ?? undefined,
+    avatarUrl: user.avatarUrl ?? null,
+    phone: user.phone ?? null,
+    jobTitle: user.jobTitle ?? null,
+    preferredLang: user.preferredLang || 'en',
+    monthlyTargetAmount: targetAmount(user.monthlyTargetAmount),
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt ?? undefined,
     loginCount: user.loginCount ?? undefined,
@@ -148,8 +177,102 @@ router.post('/logout', authMiddleware, async (req, res, next) => {
 
 router.get('/me', authMiddleware, async (req, res, next) => {
   try {
-    const settings = await prisma.settings.findUnique({ where: { organizationId: req.user!.organizationId }, select: { defaultLanguage: true } })
-    res.json({ success: true, data: { ...safeUser(req.user!), defaultLanguage: settings?.defaultLanguage || 'en' } })
+    const [user, settings] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userIdOf(req) },
+        select: {
+          id: true, email: true, role: true, organizationId: true,
+          accountStatus: true, statusReason: true, firstName: true,
+          profileImage: true, avatarUrl: true, phone: true, jobTitle: true,
+          preferredLang: true, monthlyTargetAmount: true, isActive: true,
+          lastLoginAt: true, loginCount: true, createdAt: true
+        }
+      }),
+      prisma.settings.findUnique({ where: { organizationId: req.user!.organizationId }, select: { defaultLanguage: true } })
+    ])
+    if (!user) throw createError('User not found', 404)
+    res.json({
+      success: true,
+      data: {
+        ...safeUser(user),
+        preferredLang: user.preferredLang,
+        defaultLanguage: settings?.defaultLanguage || 'en'
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Package 29: any authenticated user may update their own profile. */
+router.patch('/me', authMiddleware, async (req, res, next) => {
+  try {
+    const id = userIdOf(req)
+    const body = req.body as Record<string, unknown> | undefined
+    const data: Prisma.UserUpdateInput = {}
+
+    if (body?.firstName !== undefined) data.firstName = optionalString(body.firstName, 'firstName', 100)
+    if (body?.phone !== undefined) data.phone = optionalString(body.phone, 'phone', 50)
+    if (body?.jobTitle !== undefined) data.jobTitle = optionalString(body.jobTitle, 'jobTitle', 120)
+    if (body?.avatarUrl !== undefined) data.avatarUrl = optionalAvatarUrl(body.avatarUrl)
+    if (body?.preferredLang !== undefined) {
+      data.preferredLang = enumValue(body.preferredLang, 'preferredLang', ['en', 'ar'] as const)
+    }
+    if (!Object.keys(data).length) throw createError('No profile fields to update', 400)
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({ where: { id }, data })
+      await logAudit(tx, {
+        userId: id,
+        action: 'USER_PROFILE_UPDATED',
+        entityType: 'User',
+        entityId: id,
+        details: { fields: Object.keys(data) }
+      })
+      return user
+    })
+    res.json({ success: true, data: safeUser(updated), message: 'Profile updated successfully' })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Package 29: password changes require the current password and revoke all sessions. */
+router.post('/change-password', authMiddleware, async (req, res, next) => {
+  try {
+    const id = userIdOf(req)
+    const currentPassword = requiredString(req.body?.currentPassword, 'currentPassword', 200)
+    const newPassword = requiredString(req.body?.newPassword, 'newPassword', 200)
+    if (req.body?.confirmPassword !== undefined) {
+      const confirmPassword = requiredString(req.body.confirmPassword, 'confirmPassword', 200)
+      if (confirmPassword !== newPassword) throw createError('Passwords do not match', 400)
+    }
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      throw createError('Password must be at least 8 characters and include a letter and a number', 400)
+    }
+
+    const user = await prisma.user.findUnique({ where: { id }, select: { id: true, password: true } })
+    if (!user) throw createError('User not found', 404)
+    if (!(await comparePassword(currentPassword, user.password))) {
+      throw createError('Current password is incorrect', 401)
+    }
+    if (currentPassword === newPassword) {
+      throw createError('New password must differ from the current password', 400)
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: { password: await hashPassword(newPassword), tokenVersion: { increment: 1 } }
+      })
+      await logAudit(tx, {
+        userId: id,
+        action: 'USER_PASSWORD_CHANGED',
+        entityType: 'User',
+        entityId: id
+      })
+    })
+    res.json({ success: true, message: 'Password changed. Please sign in again.' })
   } catch (error) {
     next(error)
   }

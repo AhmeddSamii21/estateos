@@ -89,10 +89,11 @@ export const useStore = defineStore('main', () => {
       return
     }
     try {
-      const response = await apiGet<AuthUser & { defaultLanguage?: string }>('/auth/me')
+      const response = await apiGet<AuthUser>('/auth/me')
       user.value = response.data
       const saved = localStorage.getItem(LANGUAGE_KEY)
-      const lang = response.data?.defaultLanguage
+      // Package 29: a user's own preference wins over the tenant default.
+      const lang = response.data?.preferredLang || response.data?.defaultLanguage
       if (saved !== 'ar' && saved !== 'en' && (lang === 'ar' || lang === 'en')) setLanguage(lang)
     } catch {
       tokenStore.clear()
@@ -112,6 +113,9 @@ export const useStore = defineStore('main', () => {
       token.value = response.data.token
       const { token: _token, ...safeUser } = response.data
       user.value = safeUser as AuthUser
+      const saved = localStorage.getItem(LANGUAGE_KEY)
+      const preferred = response.data.preferredLang
+      if (saved !== 'ar' && saved !== 'en' && (preferred === 'ar' || preferred === 'en')) setLanguage(preferred)
     } catch (e) {
       setError(e)
       throw e
@@ -140,6 +144,21 @@ export const useStore = defineStore('main', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /** Package 29: self-service profile update through /auth/me. */
+  async function updateProfile(payload: Partial<Pick<AuthUser, 'firstName' | 'phone' | 'jobTitle' | 'avatarUrl' | 'preferredLang'>>): Promise<AuthUser> {
+    const response = await apiPatch<AuthUser>('/auth/me', payload)
+    user.value = { ...(user.value || ({} as AuthUser)), ...response.data }
+    if (response.data.preferredLang === 'ar' || response.data.preferredLang === 'en') {
+      setLanguage(response.data.preferredLang)
+    }
+    return response.data
+  }
+
+  /** Package 29: changing a password revokes every active session. */
+  async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await apiPost('/auth/change-password', { currentPassword, newPassword })
   }
 
   async function logout(): Promise<void> {
@@ -375,6 +394,8 @@ export const useStore = defineStore('main', () => {
     toggleLanguage,
     login,
     register,
+    updateProfile,
+    changePassword,
     logout,
     fetchProperties,
     fetchProperty,

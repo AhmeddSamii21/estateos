@@ -189,6 +189,18 @@ async function main() {
     const agent = await ensureUser(tx, organization.id, 'demo-user-agent', 'demo.agent@estateos.local', Role.AGENT, 'Demo Agent', DEMO_PASSWORD)
     const accountant = await ensureUser(tx, organization.id, 'demo-user-accountant', 'demo.accountant@estateos.local', Role.ACCOUNTANT, 'Demo Accountant', DEMO_PASSWORD)
 
+    // Packages 29-30: stable self-service profile values and sales targets.
+    // Updating with constants keeps repeated demo seeding idempotent.
+    await tx.user.update({
+      where: { id: accountant.id },
+      data: {
+        phone: '+20 100 222 3311',
+        jobTitle: 'Accountant / محاسب',
+        preferredLang: 'en',
+        avatarUrl: 'https://cdn.estateos.local/avatars/demo-accountant.png'
+      }
+    })
+
     // Package 27 demo hierarchy: one branch and one team with a team lead.
     const branch = await tx.branch.upsert({
       where: { id: 'demo-branch-main' },
@@ -216,11 +228,28 @@ async function main() {
     })
     await tx.user.update({
       where: { id: teamLead.id },
-      data: { role: Role.TEAM_LEAD, branchId: branch.id, teamId: team.id }
+      data: {
+        role: Role.TEAM_LEAD,
+        branchId: branch.id,
+        teamId: team.id,
+        phone: '+20 100 222 3322',
+        jobTitle: 'Team Lead / قائد فريق',
+        preferredLang: 'en',
+        avatarUrl: 'https://cdn.estateos.local/avatars/demo-team-lead.png',
+        monthlyTargetAmount: 400000
+      }
     })
     await tx.user.update({
       where: { id: agent.id },
-      data: { branchId: branch.id, teamId: team.id }
+      data: {
+        branchId: branch.id,
+        teamId: team.id,
+        phone: '+20 100 222 3333',
+        jobTitle: 'Sales Agent / وكيل مبيعات',
+        preferredLang: 'en',
+        avatarUrl: 'https://cdn.estateos.local/avatars/demo-agent.png',
+        monthlyTargetAmount: 250000
+      }
     })
 
     const ownerSz = await ensureOwner(tx, organization.id, 'demo-owner-sz', 'demo.owner.sz@estateos.local', {

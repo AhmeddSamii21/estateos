@@ -122,14 +122,23 @@
           <button class="icon-btn" type="button" :aria-label="t('Search')" @click="openSearch">
             <i class="fas fa-search"></i>
           </button>
-          <span v-if="store.user" class="user-chip">
-            <i class="fas fa-user-circle"></i>
-            {{ store.user.firstName || store.user.email }} · {{ store.user.role }}
-          </span>
-          <button class="btn btn-ghost" type="button" @click="onLogout">
-            <i class="fas fa-right-from-bracket"></i>
-            <span>{{ t('Logout') }}</span>
-          </button>
+          <div v-if="store.user" class="user-menu-wrap">
+            <button class="user-chip" type="button" :aria-label="t('Account menu')" @click="toggleUserMenu">
+              <i class="fas fa-user-circle"></i>
+              <span class="user-chip-label">{{ store.user.firstName || store.user.email }} · {{ store.user.role }}</span>
+              <i class="fas fa-chevron-down menu-chevron"></i>
+            </button>
+            <div v-if="userMenuOpen" class="user-menu" @click.stop>
+              <router-link class="user-menu-item" to="/profile" @click="userMenuOpen = false">
+                <i class="fas fa-user"></i>
+                <span>{{ t('My profile') }}</span>
+              </router-link>
+              <button class="user-menu-item" type="button" @click="onLogout">
+                <i class="fas fa-right-from-bracket"></i>
+                <span>{{ t('Logout') }}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -174,6 +183,7 @@ const commandPalette = useCommandPaletteStore()
 const route = useRoute()
 const router = useRouter()
 const notificationsOpen = ref(false)
+const userMenuOpen = ref(false)
 const notificationCategory = ref<'' | NotificationCategory>('')
 
 const ArabicLabels: Record<string, string> = {
@@ -210,6 +220,8 @@ const ArabicLabels: Record<string, string> = {
   Users: 'المستخدمون',
   Settings: 'الإعدادات',
   Notifications: 'الإشعارات',
+  'My profile': 'ملفي الشخصي',
+  'Account menu': 'قائمة الحساب',
   Logout: 'تسجيل الخروج'
 }
 
@@ -241,10 +253,16 @@ async function onLogout(): Promise<void> {
 }
 
 async function toggleNotifications(): Promise<void> {
+  userMenuOpen.value = false
   notificationsOpen.value = !notificationsOpen.value
   if (notificationsOpen.value) {
     await store.fetchNotifications({ limit: 20, category: notificationCategory.value || undefined })
   }
+}
+
+function toggleUserMenu(): void {
+  notificationsOpen.value = false
+  userMenuOpen.value = !userMenuOpen.value
 }
 
 async function onCategoryChange(): Promise<void> {
@@ -280,6 +298,7 @@ function openSearch(): void {
 function handleDocumentClick(event: MouseEvent): void {
   const target = event.target as HTMLElement | null
   if (!target?.closest('.notification-wrap')) notificationsOpen.value = false
+  if (!target?.closest('.user-menu-wrap')) userMenuOpen.value = false
 }
 
 function handleVisibility(): void {
@@ -297,7 +316,10 @@ watch(() => store.isAuthenticated, (value) => {
   else store.stopNotificationPolling()
 })
 
-watch(() => route.fullPath, () => { notificationsOpen.value = false })
+watch(() => route.fullPath, () => {
+  notificationsOpen.value = false
+  userMenuOpen.value = false
+})
 
 onBeforeUnmount(() => {
   store.stopNotificationPolling()
@@ -369,7 +391,13 @@ onBeforeUnmount(() => {
 }
 .topbar-title { font-size: 1.15rem; font-weight: 650; }
 .topbar-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.user-chip { font-size: 0.85rem; color: #4b5563; }
+.user-menu-wrap { position: relative; }
+.user-chip { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid #e5e7eb; border-radius: 999px; background: #fff; color: #4b5563; font-size: 0.85rem; padding: 0.4rem 0.7rem; cursor: pointer; }
+.user-chip:hover { background: #f9fafb; }
+.menu-chevron { font-size: 0.65rem; }
+.user-menu { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; min-width: 180px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(15,23,42,0.12); z-index: 45; overflow: hidden; }
+.user-menu-item { display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: start; padding: 0.7rem 0.9rem; background: none; border: 0; color: #374151; font-size: 0.85rem; text-decoration: none; cursor: pointer; }
+.user-menu-item:hover { background: #f3f4f6; }
 .content { padding: 1.5rem; flex: 1; }
 .alert {
   display: flex;
@@ -426,6 +454,6 @@ onBeforeUnmount(() => {
 @media (max-width: 560px) {
   .topbar-actions { gap: 0.4rem; }
   .topbar-title { font-size: 1rem; }
-  .user-chip, .command-btn .hotkey { display: none; }
+  .user-chip-label, .command-btn .hotkey { display: none; }
 }
 </style>
