@@ -179,3 +179,12 @@ test('Package 9: schema, routes and views are wired', () => {
   assert.match(reportsView, /SLA/)
   assert.match(resourceView, /Linked expense/)
 })
+
+test('GET /api/maintenance queries the expenses relation and returns a single expense', () => {
+  const route = fs.readFileSync(path.join(__dirname, '..', 'backend/routes/maintenance.ts'), 'utf8')
+  const listHandler = route.slice(route.indexOf("router.get('/'"), route.indexOf("router.get('/:id'"))
+
+  assert.doesNotMatch(listHandler, /(?<!s)expense:\s*\{[\s\S]*?select: linkedExpenseSelect/)
+  assert.match(listHandler, /expenses:\s*\{[\s\S]*?select: linkedExpenseSelect/)
+  assert.match(route, /row\.expenses\?\.\[0\]\s*\?\?\s*null/)
+})

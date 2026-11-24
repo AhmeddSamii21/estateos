@@ -20,8 +20,17 @@ router.use(authMiddleware)
 
 const linkedExpenseSelect = { id: true, status: true, amount: true, currency: true } as const
 
-function withExpenseSummary<T extends { expense?: { id: string; status: string; amount: Prisma.Decimal; currency: string } | null }>(row: T) {
-  return { ...row, ...linkedExpenseSummary(row.expense) }
+type LinkedExpense = { id: string; status: string; amount: Prisma.Decimal; currency: string }
+
+function withExpenseSummary<T extends { expenses?: LinkedExpense[] | null; expense?: LinkedExpense | null }>(row: T) {
+  const linkedExpense = row.expense ?? row.expenses?.[0] ?? null
+  const result: Record<string, unknown> = {
+    ...row,
+    expense: linkedExpense,
+    ...linkedExpenseSummary(linkedExpense)
+  }
+  delete result.expenses
+  return result
 }
 
 const TRANSITIONS: Record<MaintenanceStatus, MaintenanceStatus[]> = {
@@ -66,7 +75,7 @@ router.get('/', async (req, res, next) => {
           property: { select: { id: true, title: true, referenceNumber: true } },
           assignedTo: { select: { id: true, email: true, firstName: true } },
           createdBy: { select: { id: true, email: true, firstName: true } },
-          expense: { select: linkedExpenseSelect }
+          expenses: { where: { deletedAt: null }, select: linkedExpenseSelect }
         }
       })
     ])
@@ -87,7 +96,7 @@ router.get('/:id', async (req, res, next) => {
         property: true,
         assignedTo: { select: { id: true, email: true, firstName: true } },
         createdBy: { select: { id: true, email: true, firstName: true } },
-        expense: { select: linkedExpenseSelect }
+        expenses: { where: { deletedAt: null }, select: linkedExpenseSelect }
       }
     })
     if (!request) throw createError('Maintenance request not found', 404)
