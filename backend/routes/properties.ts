@@ -442,6 +442,41 @@ router.post('/import', requireRole(MANAGEMENT_ROLES), importUploadMiddleware, as
   }
 })
 
+/**
+ * Package 34: tenant-scoped source rows for the side-by-side comparison sheet.
+ * Registered before /:id so 'compare' is never treated as a property id.
+ */
+router.get('/compare', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const ids = Array.from(new Set(String(req.query.ids || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)))
+    if (ids.length < 2 || ids.length > 4) {
+      throw createError('Select between 2 and 4 properties', 400)
+    }
+    const where: Prisma.PropertyWhereInput = { id: { in: ids }, organizationId, deletedAt: null }
+    if (req.user?.role === 'AGENT') where.assignedAgentId = userIdOf(req)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = propertyVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
+    const properties = await prisma.property.findMany({
+      where,
+      take: 4,
+      include: { images: { orderBy: { sortOrder: 'asc' } } }
+    })
+    if (properties.length < 2) {
+      throw createError('At least two accessible properties are required', 404)
+    }
+    res.json({ success: true, data: { properties } })
+  } catch (error) {
+    next(error)
+  }
+})
+
 /** Read-only status board; registered before /:id so 'board' is not an id. */
 router.get('/board', async (req, res, next) => {
   try {
@@ -770,6 +805,9 @@ router.post('/', async (req, res, next) => {
             ? enumValue(req.body.occupancyStatus, 'occupancyStatus', Object.values(OccupancyStatus))
             : undefined,
           operationalNotes: optionalString(req.body?.operationalNotes, 'operationalNotes', 5000),
+          // Package 34: comparison metadata, additive and optional.
+          features: optionalString(req.body?.features, 'features', 2000),
+          paymentTerms: optionalString(req.body?.paymentTerms, 'paymentTerms', 2000),
           organizationId,
           ownerId,
           assignedAgentId,
@@ -842,9 +880,11 @@ router.patch('/:id', async (req, res, next) => {
         : enumValue(body.occupancyStatus, 'occupancyStatus', Object.values(OccupancyStatus))
       changes.occupancyStatus = { before: existing.occupancyStatus, after: body.occupancyStatus }
     }
-    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'operationalNotes']) {
+    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'operationalNotes', 'features', 'paymentTerms']) {
       if (body[field] !== undefined) {
-        data[field as 'city'] = optionalString(body[field], field, field === 'operationalNotes' ? 5000 : 500)
+        const maxLength = field === 'operationalNotes' ? 5000 : ['features', 'paymentTerms'].includes(field) ? 2000 : 500
+        data[field as 'city'] = optionalString(body[field], field, maxLength)
+        changes[field] = { before: (existing as unknown as Record<string, unknown>)[field] ?? null, after: body[field] }
       }
     }
     const nextCurrency = body.currency !== undefined

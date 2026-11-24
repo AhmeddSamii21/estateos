@@ -83,11 +83,18 @@
         <div class="topbar-title">{{ pageTitle }}</div>
         <div class="topbar-actions">
           <div class="notification-wrap">
-            <button class="icon-btn" type="button" :aria-label="t('Notifications')" @click="toggleNotifications">
+            <button
+              class="icon-btn"
+              type="button"
+              :aria-label="store.isArabic
+                ? `الإشعارات، ${store.unreadNotificationCount} غير مقروء`
+                : `Notifications, ${store.unreadNotificationCount} unread`"
+              @click="toggleNotifications"
+            >
               <i class="fas fa-bell"></i>
               <span v-if="store.unreadNotificationCount" class="badge-count">{{ store.unreadNotificationCount > 99 ? '99+' : store.unreadNotificationCount }}</span>
             </button>
-            <div v-if="notificationsOpen" class="notification-panel" @click.stop>
+            <div v-if="notificationsOpen" class="notification-panel" :dir="store.direction" @click.stop>
               <div class="notification-head">
                 <strong>{{ t('Notifications') }}</strong>
                 <select

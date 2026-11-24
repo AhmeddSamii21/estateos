@@ -48,6 +48,9 @@ export const PROPERTY_IMPORT_FIELDS: ImportField[] = [
   },
   { key: 'occupancyStatus', header: 'occupancyStatus', type: 'enum', allowed: Object.values(OccupancyStatus) },
   { key: 'availableFrom', header: 'availableFrom', type: 'date' },
+  // Package 34 comparison metadata is template-compatible with CSV export.
+  { key: 'features', header: 'features', type: 'string', maxLength: 2000 },
+  { key: 'paymentTerms', header: 'paymentTerms', type: 'string', maxLength: 2000 },
   { key: 'latitude', header: 'latitude', type: 'number', min: -90, max: 90 },
   { key: 'longitude', header: 'longitude', type: 'number', min: -180, max: 180 },
   { key: 'ownerId', header: 'ownerId', type: 'string', maxLength: 100 },
@@ -111,6 +114,8 @@ export function propertyImportData(
     condition: (text(values, 'condition') as PropertyCondition | undefined) ?? PropertyCondition.GOOD,
     occupancyStatus: text(values, 'occupancyStatus') as OccupancyStatus | undefined,
     availableFrom: dateOnly(values, 'availableFrom'),
+    features: text(values, 'features'),
+    paymentTerms: text(values, 'paymentTerms'),
     latitude: numeric(values, 'latitude'),
     longitude: numeric(values, 'longitude')
   }

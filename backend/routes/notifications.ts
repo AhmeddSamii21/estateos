@@ -91,7 +91,8 @@ router.patch('/:id/read', async (req, res, next) => {
   }
 })
 
-router.patch('/read-all', async (req, res, next) => {
+/** Package 33: PATCH is kept for existing clients, POST is the documented API. */
+async function markAllRead(req: import('express').Request, res: import('express').Response, next: import('express').NextFunction): Promise<void> {
   try {
     const userId = userIdOf(req)
     const organizationId = organizationIdOf(req)
@@ -103,6 +104,9 @@ router.patch('/read-all', async (req, res, next) => {
   } catch (error) {
     next(error)
   }
-})
+}
+
+router.patch('/read-all', markAllRead)
+router.post('/read-all', markAllRead)
 
 export default router

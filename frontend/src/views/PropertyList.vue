@@ -23,6 +23,9 @@
         <button v-if="store.canManage" class="btn btn-quiet" type="button" @click="selectionMode = !selectionMode">
           <i class="fas fa-list-check"></i> {{ selectionMode ? (store.isArabic ? 'إنهاء التحديد' : 'Exit selection') : (store.isArabic ? 'عمليات جماعية' : 'Bulk actions') }}
         </button>
+        <button class="btn btn-quiet" type="button" :aria-pressed="compareMode" @click="toggleCompareMode">
+          <i class="fas fa-code-compare"></i> {{ compareMode ? (store.isArabic ? 'إنهاء المقارنة' : 'Exit compare') : (store.isArabic ? 'مقارنة' : 'Compare') }}
+        </button>
         <router-link class="btn btn-primary" to="/properties/new">
           <i class="fas fa-plus"></i> {{ store.isArabic ? 'إضافة عقار' : 'Add property' }}
         </router-link>
@@ -76,7 +79,11 @@
             <input type="checkbox" :checked="selectedIds.includes(property.id)" @change="toggleSelected(property.id)" />
             <span>{{ store.isArabic ? 'تحديد' : 'Select' }}</span>
           </label>
-          <PropertyItem :property="property" @select="open" />
+          <label v-if="compareMode" class="select-box compare-select" :class="{ 'at-limit': compareIds.length >= COMPARE_MAX && !compareIds.includes(property.id) }" @click.stop>
+            <input type="checkbox" :checked="compareIds.includes(property.id)" :disabled="compareIds.length >= COMPARE_MAX && !compareIds.includes(property.id)" @change="toggleCompare(property.id)" />
+            <span>{{ store.isArabic ? 'قارن' : 'Compare' }}</span>
+          </label>
+          <PropertyItem :property="property" @select="compareMode ? toggleCompare(property.id) : open(property)" />
         </div>
       </div>
 
@@ -103,6 +110,15 @@
             <strong class="board-title">{{ property.title }}</strong>
             <span class="board-ref">{{ property.referenceNumber }}</span>
             <p class="board-price">{{ formatMoney(property.price, property.currency) }}</p>
+            <button
+              v-if="compareMode"
+              class="board-move"
+              type="button"
+              :disabled="compareIds.length >= COMPARE_MAX && !compareIds.includes(property.id)"
+              @click="toggleCompare(property.id)"
+            >
+              {{ compareIds.includes(property.id) ? (store.isArabic ? 'إزالة من المقارنة' : 'Remove from compare') : (store.isArabic ? 'أضف للمقارنة' : 'Add to compare') }}
+            </button>
             <div v-if="store.canManage && column.transitions.length" class="board-moves">
               <button
                 v-for="target in column.transitions"
@@ -118,6 +134,63 @@
           </article>
         </section>
       </div>
+    </section>
+
+    <section v-if="compareMode" class="compare-bar no-print" role="status" :aria-label="store.isArabic ? 'شريط المقارنة' : 'Compare tray'">
+      <strong>{{ store.isArabic ? `المقارنة (${compareIds.length}/${COMPARE_MAX})` : `Compare (${compareIds.length}/${COMPARE_MAX})` }}</strong>
+      <span v-if="!compareIds.length" class="muted">
+        {{ store.isArabic ? 'اختر عقارين على الأقل وحتى أربعة للمقارنة.' : 'Select 2 to 4 properties to compare.' }}
+      </span>
+      <span v-for="id in compareIds" :key="id" class="compare-chip">
+        {{ propertyRef(id) }}
+        <button type="button" :aria-label="store.isArabic ? 'إزالة' : 'Remove'" @click="toggleCompare(id)">×</button>
+      </span>
+      <button class="btn btn-primary" type="button" :disabled="!canCompare" @click="openCompare">
+        {{ store.isArabic ? 'عرض المقارنة' : 'Show comparison' }}
+      </button>
+      <button class="btn btn-quiet" type="button" :disabled="!compareIds.length" @click="clearCompare">
+        {{ store.isArabic ? 'مسح' : 'Clear' }}
+      </button>
+    </section>
+
+    <section v-if="compareOpen && canCompare" class="compare-sheet" :dir="store.direction">
+      <div class="print-only print-brand">
+        <div class="print-brand-top"><strong>{{ store.isArabic ? 'إستيت أو إس' : 'EstateOS' }}</strong><span>{{ printGeneratedAt }}</span></div>
+        <h2>{{ store.isArabic ? 'مقارنة العقارات' : 'Property comparison' }}</h2>
+      </div>
+      <header class="compare-head no-print">
+        <h2>{{ store.isArabic ? 'مقارنة العقارات' : 'Property comparison' }}</h2>
+        <div class="head-actions">
+          <button class="btn btn-quiet" type="button" @click="onPrintCompare"><i class="fas fa-print"></i> {{ store.isArabic ? 'طباعة / PDF' : 'Print / PDF' }}</button>
+          <button class="btn btn-quiet" type="button" @click="onCopyCompare"><i class="fas fa-copy"></i> {{ store.isArabic ? 'نسخ' : 'Copy' }}</button>
+          <button class="btn btn-quiet" type="button" @click="onShareCompare"><i class="fab fa-whatsapp"></i> {{ store.isArabic ? 'واتساب' : 'WhatsApp' }}</button>
+          <button class="btn btn-quiet" type="button" @click="compareOpen = false">{{ store.isArabic ? 'إغلاق' : 'Close' }}</button>
+        </div>
+      </header>
+      <p v-if="compareMessage" class="notice no-print" role="status">{{ compareMessage }}</p>
+      <div class="compare-scroll">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col">{{ store.isArabic ? 'المعيار' : 'Metric' }}</th>
+              <th v-for="property in compareProperties" :key="property.id" scope="col">
+                <strong>{{ property.title }}</strong>
+                <small>{{ property.referenceNumber }}</small>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in compareRows" :key="row.key">
+              <th scope="row">{{ row.label }}</th>
+              <td v-for="(value, index) in row.values" :key="`${row.key}-${index}`">
+                <img v-if="row.key === 'coverPhoto' && isPhoto(value)" class="compare-photo" :src="value" :alt="compareProperties[index]?.title || ''" />
+                <span v-else>{{ value }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <textarea :value="compareSummary" class="compare-summary print-only" readonly rows="20" aria-hidden="true"></textarea>
     </section>
 
     <ImportCsvModal
@@ -143,6 +216,15 @@ import PropertyFilters from '@/components/PropertyFilters.vue'
 import PropertyItem from '@/components/PropertyItem.vue'
 import { downloadCsv, type CsvColumn, type CsvRow } from '@/utils/csv'
 import type { CsvImportPreview } from '@/utils/csvImport'
+import {
+  COMPARE_MAX,
+  COMPARE_MIN,
+  buildCompareRows,
+  buildCompareSummary,
+  buildCompareWhatsAppMessage,
+  validateCompareSelection
+} from '@/utils/propertyCompareCore.mjs'
+import { buildWhatsAppUrl } from '@/utils/whatsappCore.mjs'
 import { useStore } from '@/stores'
 import type { Property, PropertyFilters as Filters } from '@/types'
 
@@ -164,6 +246,10 @@ const importBusy = ref(false)
 const importPreview = ref<CsvImportPreview | null>(null)
 const importError = ref('')
 const importMessage = ref('')
+const compareMode = ref(false)
+const compareIds = ref<string[]>([])
+const compareOpen = ref(false)
+const compareMessage = ref('')
 const agents = ref<Array<{ id: string; email: string; firstName?: string | null; role: string }>>([])
 const statuses = ['AVAILABLE', 'UNDER_NEGOTIATION', 'PENDING', 'RESERVED', 'SOLD', 'RENTED', 'OFF_MARKET', 'UNAVAILABLE']
 
@@ -222,6 +308,85 @@ const canRunBulk = computed(() => {
   if (bulkAction.value === 'status') return Boolean(bulkStatus.value)
   return true
 })
+
+const compareProperties = computed<Property[]>(() => compareIds.value
+  .map((id) => store.properties.find((property) => property.id === id))
+  .filter((property): property is Property => Boolean(property)))
+const canCompare = computed(() => compareIds.value.length >= COMPARE_MIN
+  && compareIds.value.length <= COMPARE_MAX
+  && compareProperties.value.length === compareIds.value.length)
+const compareLanguage = computed(() => (store.isArabic ? 'ar' : 'en') as 'ar' | 'en')
+const compareRows = computed(() => buildCompareRows(compareProperties.value, compareLanguage.value))
+const compareSummary = computed(() => buildCompareSummary(compareProperties.value, compareLanguage.value))
+const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
+
+function toggleCompareMode(): void {
+  compareMode.value = !compareMode.value
+  if (!compareMode.value) {
+    compareOpen.value = false
+    compareIds.value = []
+    compareMessage.value = ''
+  }
+}
+
+function toggleCompare(id: string): void {
+  compareMessage.value = ''
+  if (compareIds.value.includes(id)) {
+    compareIds.value = compareIds.value.filter((value) => value !== id)
+  } else if (compareIds.value.length < COMPARE_MAX) {
+    compareIds.value = [...compareIds.value, id]
+  }
+  compareOpen.value = false
+}
+
+function clearCompare(): void {
+  compareIds.value = []
+  compareOpen.value = false
+  compareMessage.value = ''
+}
+
+function openCompare(): void {
+  try {
+    validateCompareSelection(compareIds.value)
+    compareOpen.value = true
+    compareMessage.value = ''
+  } catch (error) {
+    compareMessage.value = store.isArabic
+      ? 'اختر عقارين على الأقل وحتى أربعة.'
+      : errorMessage(error)
+  }
+}
+
+function isPhoto(value: string): boolean {
+  return /^https?:\/\//i.test(value) || value.startsWith('data:image/')
+}
+
+function onPrintCompare(): void {
+  window.print()
+}
+
+async function onCopyCompare(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(compareSummary.value)
+    compareMessage.value = store.isArabic ? 'تم نسخ المقارنة.' : 'Comparison copied to clipboard.'
+  } catch {
+    compareMessage.value = store.isArabic ? 'تعذّر النسخ.' : 'Could not copy the comparison.'
+  }
+}
+
+function onShareCompare(): void {
+  const phone = window.prompt(store.isArabic
+    ? 'أدخل رقم واتساب للمستلم'
+    : 'Enter the recipient WhatsApp number')
+  if (!phone) return
+  const url = buildWhatsAppUrl(phone, buildCompareWhatsAppMessage(compareProperties.value, compareLanguage.value))
+  if (!url) {
+    compareMessage.value = store.isArabic ? 'رقم غير صالح.' : 'Invalid phone number.'
+    return
+  }
+  window.open(url, '_blank', 'noopener')
+  compareMessage.value = store.isArabic ? 'تم فتح واتساب.' : 'WhatsApp opened in a new tab.'
+}
 
 async function loadAgents(): Promise<void> {
   try {
@@ -345,6 +510,8 @@ async function onExportProperties(): Promise<void> {
       { key: 'condition', label: t('Condition', 'الحالة العامة') },
       { key: 'occupancyStatus', label: t('Occupancy', 'الإشغال') },
       { key: 'availableFrom', label: t('Available from', 'متاح من') },
+      { key: 'features', label: t('Features', 'المميزات') },
+      { key: 'paymentTerms', label: t('Payment terms', 'شروط الدفع') },
       { key: 'latitude', label: t('Latitude', 'خط العرض') },
       { key: 'longitude', label: t('Longitude', 'خط الطول') }
     ]
@@ -376,6 +543,8 @@ async function onExportProperties(): Promise<void> {
         condition: property.condition,
         occupancyStatus: property.occupancyStatus ?? '',
         availableFrom: property.availableFrom ? String(property.availableFrom).slice(0, 10) : '',
+        features: property.features ?? '',
+        paymentTerms: property.paymentTerms ?? '',
         latitude: property.latitude ?? '',
         longitude: property.longitude ?? ''
       })))
@@ -515,4 +684,25 @@ h1 { margin: 0; font-size: 1.5rem; }
   .filters, .bulk-row { padding-inline: 0.75rem; }
 }
 @media (max-width: 640px) { .bulk-row { flex-direction: column; align-items: stretch; } .bulk-row .btn { justify-content: center; } }
+.compare-bar { background: #fff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 0.75rem 0.9rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.compare-chip { background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 0.2rem 0.55rem; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem; }
+.compare-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; }
+.compare-select.at-limit { opacity: 0.45; }
+.compare-sheet { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.compare-head { display: flex; justify-content: space-between; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.compare-head h2 { margin: 0; font-size: 1.05rem; }
+.compare-scroll { overflow-x: auto; }
+.compare-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; min-width: 640px; }
+.compare-table th, .compare-table td { border: 1px solid #e5e7eb; padding: 0.55rem 0.65rem; text-align: start; vertical-align: top; }
+.compare-table thead th { background: #f8fafc; }
+.compare-table tbody th { background: #f9fafb; width: 150px; font-weight: 600; }
+.compare-table small { display: block; color: #6b7280; font-weight: 400; }
+.compare-photo { width: 120px; height: 80px; object-fit: cover; border-radius: 6px; }
+.compare-summary { width: 100%; border: 0; font-family: inherit; font-size: 0.72rem; resize: none; }
+@media print {
+  .compare-sheet { border: 0 !important; padding: 0 !important; }
+  .compare-table { min-width: 0 !important; font-size: 9pt !important; }
+  .compare-table th, .compare-table td { border-color: #999 !important; }
+  .compare-photo { max-width: 100%; }
+}
 </style>

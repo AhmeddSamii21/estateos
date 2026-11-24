@@ -35,7 +35,7 @@ function validatePath(path: string): string | null {
   const clean = path.trim().replace(/\/+$/, '')
   if (!clean.startsWith('/') || /[?#]/.test(clean)) return null
   if (COLLECTION_TARGETS.has(clean)) return clean
-  const match = /^\/(properties|deals)\/([^/]+)$/.exec(clean)
+  const match = /^\/(properties|deals|appointments)\/([^/]+)$/.exec(clean)
   if (match && ID_PATTERN.test(match[2])) return `/${match[1]}/${match[2]}`
   return null
 }

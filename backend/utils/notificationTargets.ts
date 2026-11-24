@@ -81,6 +81,8 @@ export function resolveNotificationTarget(input: {
     if (SAFE_STATIC_URLS.has(actionUrl) || SAFE_LEAD_QUERY_URLS.has(actionUrl)) return actionUrl
     if (/^\/properties\/[A-Za-z0-9_-]+$/.test(actionUrl)) return actionUrl
     if (/^\/deals\/[A-Za-z0-9_-]+$/.test(actionUrl)) return actionUrl
+    // Package 33: appointment reminders deep-link to the specific calendar row.
+    if (/^\/appointments\/[A-Za-z0-9_-]+$/.test(actionUrl)) return actionUrl
   }
 
   const entityType = typeof input.entityType === 'string' ? input.entityType.trim().toUpperCase() : ''

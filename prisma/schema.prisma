@@ -474,6 +474,10 @@ model Property {
   availableFrom   DateTime?
   occupancyStatus OccupancyStatus?
   operationalNotes String?
+  // Package 34: bilingual free-text feature/payment summaries used by the
+  // side-by-side comparison sheet. Existing rows stay null and keep working.
+  features        String?
+  paymentTerms    String?
   saleRentRatio   Decimal?  @db.Decimal(12, 2)
   isActive        Boolean   @default(true)
   deletedAt       DateTime?

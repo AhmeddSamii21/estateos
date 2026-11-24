@@ -25,6 +25,7 @@ export interface ReminderRunResult {
   organizations: number
   paymentReminders: number
   appointmentReminders: number
+  appointmentUpcomingReminders: number
   leadFollowUpReminders: number
   leaseRenewalReminders: number
   maintenanceReminders: number
@@ -64,6 +65,10 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
   const dueSoonHours = Number(process.env.REMINDER_DUE_SOON_HOURS || DEFAULT_DUE_SOON_HOURS)
   const dueSoonMs = (Number.isFinite(dueSoonHours) && dueSoonHours > 0 ? dueSoonHours : DEFAULT_DUE_SOON_HOURS) * 60 * 60 * 1000
   const dueSoonCutoff = new Date(now.getTime() + dueSoonMs)
+  // Package 33: an appointment inside the next 24 hours gets a distinct
+  // upcoming alert. The generic reminder window remains independently
+  // configurable for installments and leases.
+  const appointmentSoonCutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000)
   const todayKey = toDayKey(now)
   const endOfToday = new Date(startOfUtcDay(now).getTime() + 24 * 60 * 60 * 1000)
   const maxLeaseWindow = new Date(now.getTime() + MAX_RENEWAL_NOTICE_DAYS * 24 * 60 * 60 * 1000)
@@ -71,6 +76,7 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
     organizations: 0,
     paymentReminders: 0,
     appointmentReminders: 0,
+    appointmentUpcomingReminders: 0,
     leadFollowUpReminders: 0,
     leaseRenewalReminders: 0,
     maintenanceReminders: 0
@@ -137,7 +143,9 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
         entityType: 'Payment',
         entityId: payment.id,
         actionUrl: `/deals/${payment.dealId}`,
-        metadata: { kind, dueDate: toDayKey(dueAt), reminderDay: todayKey, paymentStatus: payment.status }
+        // Package 33: flagged so the notification UI can label an overdue
+        // installment explicitly without changing the historical type/code.
+        metadata: { kind, dueDate: toDayKey(dueAt), reminderDay: todayKey, paymentStatus: payment.status, installmentAlert: true }
       })), todayKey)
       result.paymentReminders += created
     }
@@ -174,6 +182,43 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
         metadata: { reminderDay: todayKey, endedAt: end.toISOString() }
       }], todayKey)
       result.appointmentReminders += created
+    }
+
+    // 2b) Package 33: upcoming appointments (<24h) still marked SCHEDULED.
+    // createDailyReminders keys on reminderDay, so a 15-minute scheduler never
+    // re-sends the same alert for the same appointment on the same day.
+    const upcomingAppointments = await prisma.appointment.findMany({
+      where: {
+        status: AppointmentStatus.SCHEDULED,
+        startsAt: { gte: now, lt: appointmentSoonCutoff },
+        user: { organizationId: org.id, deletedAt: null, isActive: true, accountStatus: 'ACTIVE' }
+      },
+      select: { id: true, title: true, startsAt: true, userId: true, lead: { select: { firstName: true, lastName: true } } },
+      orderBy: { startsAt: 'asc' },
+      take: 500
+    })
+    for (const appt of upcomingAppointments) {
+      const recipients = await organizationRecipientIds(prisma, org.id, {
+        roles: ['ADMIN', 'MANAGER'],
+        includeUserIds: [appt.userId]
+      })
+      if (!recipients.length) continue
+      const label = appt.title || (appt.lead
+        ? `${appt.lead.firstName}${appt.lead.lastName ? ` ${appt.lead.lastName}` : ''}`
+        : 'Appointment')
+      const hours = Math.max(0, Math.round((appt.startsAt.getTime() - now.getTime()) / 3600000))
+      const created = await createDailyReminders(recipients.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: 'APPOINTMENT_UPCOMING_24H',
+        title: 'Appointment in less than 24 hours',
+        message: `${label} starts at ${appt.startsAt.toISOString()} (in about ${hours} hour${hours === 1 ? '' : 's'}).`,
+        entityType: 'Appointment',
+        entityId: appt.id,
+        actionUrl: `/appointments/${appt.id}`,
+        metadata: { reminderDay: todayKey, kind: 'upcoming-24h', startsAt: appt.startsAt.toISOString() }
+      })), todayKey)
+      result.appointmentUpcomingReminders += created
     }
 
     // 3) Lead follow-ups due today or overdue. Open leads only; a won/lost
@@ -373,7 +418,7 @@ async function runSafely(label: string) {
   try {
     const res = await runReminders(new Date())
     if (process.env.NODE_ENV !== 'test') {
-      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders} maintenance=${res.maintenanceReminders}`)
+      console.log(`[reminders] ${label}: orgs=${res.organizations} payment=${res.paymentReminders} appointment=${res.appointmentReminders} upcoming=${res.appointmentUpcomingReminders} followUp=${res.leadFollowUpReminders} lease=${res.leaseRenewalReminders} maintenance=${res.maintenanceReminders}`)
     }
   } catch (err) {
     console.error(`[reminders] ${label} failed`, err)

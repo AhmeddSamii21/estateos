@@ -136,6 +136,14 @@
         <span>{{ store.isArabic ? 'الوصف' : 'Description' }}</span>
         <textarea v-model="form.description" rows="3"></textarea>
       </label>
+      <label class="full">
+        <span>{{ store.isArabic ? 'المميزات (إنجليزي / عربي)' : 'Features (EN / AR)' }}</span>
+        <textarea v-model="form.features" rows="2" maxlength="2000"></textarea>
+      </label>
+      <label class="full">
+        <span>{{ store.isArabic ? 'شروط الدفع (إنجليزي / عربي)' : 'Payment terms (EN / AR)' }}</span>
+        <textarea v-model="form.paymentTerms" rows="2" maxlength="2000"></textarea>
+      </label>
 
       <section v-if="isEdit" class="gallery-panel">
         <div class="gallery-heading">
@@ -236,6 +244,8 @@ interface PropertyFormState {
   occupancyStatus: string
   negotiable: boolean
   description: string
+  features: string
+  paymentTerms: string
   ownerId: string
   branchId: string
   teamId: string
@@ -246,7 +256,7 @@ function emptyForm(): PropertyFormState {
     title: '', referenceNumber: '', type: 'HOUSE', status: 'AVAILABLE', classification: 'SALE',
     price: '', currency: 'USD', city: '', state: '', country: '', postalCode: '', address: '',
     latitude: '', longitude: '', bedrooms: '0', bathrooms: '0', floors: '', area: '', areaUnit: 'SQ_M',
-    yearBuilt: '', condition: 'GOOD', occupancyStatus: '', negotiable: false, description: '', ownerId: '', branchId: '', teamId: ''
+    yearBuilt: '', condition: 'GOOD', occupancyStatus: '', negotiable: false, description: '', features: '', paymentTerms: '', ownerId: '', branchId: '', teamId: ''
   }
 }
 
@@ -290,6 +300,8 @@ onMounted(async () => {
       occupancyStatus: property.occupancyStatus || '',
       negotiable: property.negotiable,
       description: property.description || '',
+      features: property.features || '',
+      paymentTerms: property.paymentTerms || '',
       ownerId: property.ownerId || '',
       branchId: (property as { branchId?: string | null }).branchId || '',
       teamId: (property as { teamId?: string | null }).teamId || ''
@@ -337,6 +349,8 @@ function applyDuplicateDraft(): void {
       occupancyStatus: text(draft.occupancyStatus),
       negotiable: draft.negotiable === true || draft.negotiable === 'true',
       description: text(draft.description),
+      features: text(draft.features),
+      paymentTerms: text(draft.paymentTerms),
       ownerId: text(draft.ownerId),
       branchId: text(draft.branchId),
       teamId: text(draft.teamId)
@@ -472,6 +486,8 @@ function payload(): Record<string, unknown> {
     occupancyStatus: form.occupancyStatus || undefined,
     negotiable: form.negotiable,
     description: form.description.trim() || undefined,
+    features: form.features.trim() || undefined,
+    paymentTerms: form.paymentTerms.trim() || undefined,
     ownerId: form.ownerId || '',
     branchId: form.branchId.trim() || undefined,
     teamId: form.teamId.trim() || undefined

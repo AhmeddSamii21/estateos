@@ -61,6 +61,9 @@ export interface Property {
   availableFrom?: string | null
   occupancyStatus?: string | null
   operationalNotes?: string | null
+  // Package 34: bilingual free text used by the comparison sheet.
+  features?: string | null
+  paymentTerms?: string | null
   organizationId: string
   ownerId?: string | null
   assignedAgentId?: string | null
