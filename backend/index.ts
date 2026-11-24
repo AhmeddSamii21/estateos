@@ -27,6 +27,8 @@ import webhookRoutes from './routes/webhooks'
 import hierarchyRoutes from './routes/hierarchy'
 import referralRoutes from './routes/referrals'
 import contractRoutes from './routes/contracts'
+import leaderboardRoutes from './routes/leaderboard'
+import importRoutes from './routes/imports'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
@@ -150,6 +152,8 @@ app.use('/api/webhooks', webhookRoutes)
 app.use('/api/hierarchy', hierarchyRoutes)
 app.use('/api/referrals', referralRoutes)
 app.use('/api/contracts', contractRoutes)
+app.use('/api/leaderboard', leaderboardRoutes)
+app.use('/api/imports', importRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

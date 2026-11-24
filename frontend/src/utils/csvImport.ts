@@ -17,8 +17,13 @@ export const PROPERTY_IMPORT_HEADERS = [
   'condition',
   'occupancyStatus',
   'availableFrom',
+  // Package 34 comparison metadata and Package 38 template parity.
+  'features',
+  'paymentTerms',
   'latitude',
-  'longitude'
+  'longitude',
+  'ownerId',
+  'assignedAgentId'
 ] as const
 
 export const LEAD_IMPORT_HEADERS = [

@@ -26,6 +26,7 @@ const routes = [
       { path: 'appointments', name: 'Appointments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'appointments' }, meta: { title: 'Appointments' } },
       { path: 'deals', name: 'Deals', component: () => import('@/views/ResourceView.vue'), props: { resource: 'deals' }, meta: { title: 'Deals' } },
       { path: 'deals/:id', name: 'DealDetail', component: () => import('@/views/DealDetail.vue'), props: true, meta: { title: 'Deal Details' } },
+      { path: 'leaderboard', name: 'Leaderboard', component: () => import('@/views/LeaderboardView.vue'), meta: { title: 'Sales leaderboard' } },
       { path: 'finance/payments', name: 'Payments', component: () => import('@/views/ResourceView.vue'), props: { resource: 'payments' }, meta: { title: 'Payments', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },
       { path: 'finance/payment-calculator', name: 'PaymentCalculator', component: () => import('@/views/PaymentCalculatorView.vue'), meta: { title: 'Payment calculator' } },
       { path: 'finance/expenses', name: 'Expenses', component: () => import('@/views/ResourceView.vue'), props: { resource: 'expenses' }, meta: { title: 'Expenses', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } },

@@ -13,6 +13,17 @@
             : `Import ${kind === 'properties' ? 'properties' : 'leads'} from a CSV file. Validate a preview before committing any rows.` }}
         </p>
 
+        <ol class="wizard-steps" :aria-label="t('Import steps', 'خطوات الاستيراد')">
+          <li
+            v-for="(step, index) in IMPORT_WIZARD_STEPS"
+            :key="step"
+            :class="{ active: index + 1 === progress.current, done: index + 1 < progress.current }"
+          >
+            <span>{{ index + 1 }}</span>
+            {{ stepLabel(step) }}
+          </li>
+        </ol>
+
         <button class="btn btn-quiet" type="button" @click="downloadTemplate">
           <i class="fas fa-download"></i> {{ t('Download template', 'تنزيل القالب') }}
         </button>
@@ -48,6 +59,20 @@
           <div class="preview-summary">
             <strong>{{ preview.validCount }} {{ t('valid', 'صالح') }}</strong>
             <span>{{ preview.invalidCount }} {{ t('invalid', 'غير صالح') }}</span>
+          </div>
+
+          <div class="preview-actions">
+            <button
+              v-if="preview.invalidCount"
+              class="btn btn-quiet"
+              type="button"
+              @click="downloadRejected"
+            >
+              <i class="fas fa-download"></i> {{ t('Download rejected rows', 'تنزيل الصفوف المرفوضة') }}
+            </button>
+            <span class="small muted">
+              {{ t('Step', 'الخطوة') }} {{ progress.current }}/{{ progress.total }} · {{ progress.percent }}%
+            </span>
           </div>
 
           <div v-if="!preview.rows.length" class="small muted">{{ t('No rows found in this CSV.', 'لا توجد صفوف في هذا الملف.') }}</div>
@@ -90,6 +115,7 @@ import {
   type CsvImportPreview
 } from '@/utils/csvImport'
 import { useStore } from '@/stores'
+import { IMPORT_WIZARD_STEPS, rejectedRowsCsv, wizardProgress } from '@/utils/csvImportWizard.mjs'
 
 const props = defineProps<{
   open: boolean
@@ -114,12 +140,25 @@ function t(english: string, arabic: string): string {
   return store.isArabic ? arabic : english
 }
 
+const progress = computed(() => wizardProgress(props.preview || null, { canCommit: !props.error }))
 const canCommit = computed(() =>
   (props.preview?.validCount ?? 0) > 0
   && !props.error
   && !localError.value
   && Boolean(csv.value.trim())
 )
+
+const STEP_LABELS: Record<string, [string, string]> = {
+  upload: ['Upload', 'رفع'],
+  validate: ['Validate', 'تحقق'],
+  review: ['Review', 'مراجعة'],
+  commit: ['Commit', 'إدخال']
+}
+
+function stepLabel(step: string): string {
+  const [english, arabic] = STEP_LABELS[step] || [step, step]
+  return store.isArabic ? arabic : english
+}
 
 watch(() => props.open, (open) => {
   if (open) {
@@ -159,6 +198,19 @@ function onCommit(): void {
   emit('commit', { csv: csv.value, dryRun: false })
 }
 
+function downloadRejected(): void {
+  if (!props.preview) return
+  const blob = new Blob([rejectedRowsCsv(props.preview)], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${props.kind}-rejected-rows.csv`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 function cell(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'object') return JSON.stringify(value)
@@ -185,6 +237,13 @@ textarea { border: 1px solid #d1d5db; border-radius: 8px; padding: 0.6rem; width
 .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.6rem 0.7rem; font-size: 0.84rem; }
 .notice { background: #eef2ff; color: #3730a3; border-radius: 8px; padding: 0.6rem 0.7rem; font-size: 0.84rem; }
+.wizard-steps { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; list-style: none; margin: 0; padding: 0; font-size: 0.76rem; color: #6b7280; }
+.wizard-steps li { display: flex; gap: 0.35rem; align-items: center; }
+.wizard-steps li span { display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #eef2f7; font-size: 0.7rem; }
+.wizard-steps li.active { color: #3730a3; font-weight: 600; }
+.wizard-steps li.active span { background: #4f46e5; color: #fff; }
+.wizard-steps li.done span { background: #dcfce7; color: #166534; }
+.preview-actions { display: flex; justify-content: space-between; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
 .preview-summary { display: flex; gap: 0.8rem; align-items: center; font-size: 0.84rem; }
 .preview-summary strong { color: #166534; }
 .table-wrap { max-height: 320px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }

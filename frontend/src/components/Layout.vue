@@ -25,6 +25,9 @@
         <router-link to="/deals" class="nav-link">
           <i class="fas fa-handshake"></i><span>{{ t('Deals') }}</span>
         </router-link>
+        <router-link to="/leaderboard" class="nav-link">
+          <i class="fas fa-trophy"></i><span>{{ t('Leaderboard') }}</span>
+        </router-link>
         <router-link to="/finance/payment-calculator" class="nav-link">
           <i class="fas fa-calculator"></i><span>{{ t('Payment calculator') }}</span>
         </router-link>
