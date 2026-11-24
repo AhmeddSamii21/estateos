@@ -36,7 +36,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run all 207 automated tests (`node --test tests/**/*.test.js`) |
+| `npm test` | Run all 285 automated tests (`node --test tests/**/*.test.js`) |
 | `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
 | `npm run typecheck` | Type-check both backend and frontend without emitting files |
 | `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
@@ -45,7 +45,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 | `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
 | `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
 
-Current verification status: **207 tests pass, 0 fail**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
+Current verification status: **285 tests pass, 0 fail**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
 
 ## What the application does
 
@@ -71,7 +71,7 @@ Current verification status: **207 tests pass, 0 fail**, both typechecks pass, A
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-43 are now consolidated through this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -93,6 +93,25 @@ Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in th
 | 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
 | 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
 | 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view and copy/regenerate/revoke controls. |
+| 29 | `3583e96` | Self-service user profile (language, avatar, password) with audit-safe updates. |
+| 30 | `3583e96` | Admin account lifecycle controls and per-agent monthly sales targets. |
+| 31 | `1a8612f` | Tenant-scoped client portal with allow-listed deal, payment and document views. |
+| 32 | `1a8612f` | Interactive installment and mortgage simulator with bilingual amortization output. |
+| 33 | `7af60a6` | In-app notifications with read state, deep links and deduplicated reminder alerts. |
+| 34 | `7af60a6` | Side-by-side property comparison with bilingual features and payment terms. |
+| 35 | `79c4c2d` | Tenant-owned referral partners and snapshotted per-deal commission splits. |
+| 36 | `79c4c2d` | Reusable bilingual contract templates with validated placeholder rendering. |
+| 37 | `4808ae9` | Sales quota leaderboard with role-aware visibility and period filters. |
+| 38 | `4808ae9` | Validated CSV import wizard with preview, error report and BOM-safe template. |
+| 39 | `130a635` | White-label organization branding (logo, colors, theme, bilingual footer). |
+| 40 | `130a635` | SaaS plan tiers with tenant overrides and enforced user/property/deal quotas. |
+| 41 | `7484465` | Follow-up automation rules, deduplicated tasks and role-scoped task views. |
+| 42 | `7484465` | Visual unit inventory grid grouped by project, building and floor. |
+| 43 | This commit | Final full regression, refreshed idempotent demo seed, timestamped SQL backup, synced docs and live-service handover. |
+
+### Package 43 final handover
+
+`npm run verify` passed with **285 tests / 0 failures** after the final demo sync. `npm run db:seed:demo` is idempotent: it enriches the existing demo tenant with Package 33–42 records using stable `demo-` IDs and `upsert(..., update: {})`, and a second run creates 0 rows. `tests/package24-demo-seed.test.js` now asserts the bilingual, tenant-owned demo records. A timestamped plain-SQL `pg_dump` snapshot was written under git-ignored `backups/` before the handover commit. Local services: API `http://localhost:3000/api/health` and frontend `http://localhost:5173`.
 
 ### Package 22 webhook contract
 
@@ -106,5 +125,5 @@ Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/D
 
 - [RUNBOOK.md](RUNBOOK.md) — local setup, database steps, migration procedure, verification and safety notes.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit together.
-- [FINAL_CLOSURE_REPORT.md](FINAL_CLOSURE_REPORT.md) — Packages 1–28 checklist, final verification, commits, live-service check and upgrade roadmap.
+- [FINAL_CLOSURE_REPORT.md](FINAL_CLOSURE_REPORT.md) — historical Packages 1–28 checklist, verification and upgrade roadmap; see the delivery table above for Packages 29–43.
 - `.env.example` — configuration template (no real secrets).

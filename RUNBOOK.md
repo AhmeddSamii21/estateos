@@ -6,7 +6,7 @@ This is the authoritative local setup and verification guide for the Vue 3 + Exp
 
 - PostgreSQL is reachable on port 5432; `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. Values are never printed here.
 - `npm run prisma:validate` passes; `npm run prisma:generate` regenerates Prisma Client 6.4.1.
-- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **207 tests**, and the production frontend build.
+- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **285 tests**, and the production frontend build.
 - `npx prisma migrate status` reports **15 migrations found** and **Database schema is up to date**.
 - The API runs on `http://localhost:3000`; the Vite frontend runs on `http://localhost:5173`. `GET /api/health` returns `200` both directly and through the Vite proxy, with `database.status: up`.
 - The repository is on `master`. Packages 11-28 are committed through `7ee3de8` (`f01ba5b` Package 26, `cae3093` Package 27, `7ee3de8` Package 28). No `origin` remote is configured, so no push is performed.
@@ -124,9 +124,9 @@ Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`; `C
 npm run verify
 ```
 
-This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **207 passed, 0 failed** from `node --test tests/**/*.test.js`, including the Package 25 owner-to-webhook lifecycle suite and the Package 26–28 WhatsApp, hierarchy and owner-portal security suites.
+This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **285 passed, 0 failed** from `node --test tests/**/*.test.js`, including the Package 25 owner-to-webhook lifecycle suite, the Package 26–28 WhatsApp/hierarchy/owner-portal suites and the Package 33–42 notification, comparison, referral, contract, leaderboard, import, branding, quota, automation and inventory suites.
 
-Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, checklist/aging/payout/recurrence rules, webhook signing and SSRF guards, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Database-backed suites (`auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24 and Package 25) start the API and require a live, migrated database; pure helper suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures in FK-safe order.
+Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, checklist/aging/payout/recurrence rules, webhook signing and SSRF guards, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Database-backed suites (`auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24, 25, 33-42 and the Package 43 demo-seed check) start the API and require a live, migrated database; pure helper suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures in FK-safe order.
 
 ## Implemented feature notes
 
@@ -150,7 +150,7 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-43 are now consolidated through this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -172,6 +172,28 @@ Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in th
 | 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
 | 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
 | 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view. |
+| 29 | `3583e96` | Self-service user profile (language, avatar, password) with audit-safe updates. |
+| 30 | `3583e96` | Admin account lifecycle controls and per-agent monthly sales targets. |
+| 31 | `1a8612f` | Tenant-scoped client portal with allow-listed deal, payment and document views. |
+| 32 | `1a8612f` | Interactive installment and mortgage simulator with bilingual amortization output. |
+| 33 | `7af60a6` | In-app notifications with read state, deep links and deduplicated reminder alerts. |
+| 34 | `7af60a6` | Side-by-side property comparison with bilingual features and payment terms. |
+| 35 | `79c4c2d` | Tenant-owned referral partners and snapshotted per-deal commission splits. |
+| 36 | `79c4c2d` | Reusable bilingual contract templates with validated placeholder rendering. |
+| 37 | `4808ae9` | Sales quota leaderboard with role-aware visibility and period filters. |
+| 38 | `4808ae9` | Validated CSV import wizard with preview, error report and BOM-safe template. |
+| 39 | `130a635` | White-label organization branding (logo, colors, theme, bilingual footer). |
+| 40 | `130a635` | SaaS plan tiers with tenant overrides and enforced user/property/deal quotas. |
+| 41 | `7484465` | Follow-up automation rules, deduplicated tasks and role-scoped task views. |
+| 42 | `7484465` | Visual unit inventory grid grouped by project, building and floor. |
+| 43 | This commit | Final full regression, refreshed idempotent demo seed, timestamped SQL backup, synced docs and live-service handover. |
+
+### Package 43 final handover
+
+1. Run `npm run verify` (285 tests, 0 failures) before taking the release snapshot.
+2. Refresh demo data with `npm run db:seed:demo`. It is safe to re-run: all records use stable `demo-` IDs and `upsert(..., update: {})`, ADMIN accounts are fingerprint-checked and left unchanged, and a second run creates 0 rows.
+3. Take a timestamped plain-SQL backup. Strip Prisma's `?schema=...` query string from `DATABASE_URL` first (`pg_dump` rejects it): `pg_dump "<DATABASE_URL without ?schema>" -Fp -f backups/estateos-<UTC-ISO>-Z.sql`. The `backups/` directory is git-ignored.
+4. Start services in two terminals: `npm run dev:api` (API on `http://localhost:3000`) and `npm run dev` (Vite on `http://localhost:5173`). Confirm `http://localhost:3000/api/health` and `http://localhost:5173` return HTTP 200.
 
 ### Package 22 webhook contract
 
@@ -199,4 +221,4 @@ Operational note: in-memory rate limits are per API process. Use shared storage 
 
 - No credentials, passwords, full connection strings or secret values are printed by helper scripts or in this document.
 - No database data is deleted or reset by any script or migration here; `prisma migrate reset` is prohibited.
-- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads, SQL backups under `backups/`, and temp fixtures. `.env` was never staged. The final Package 28 commit is local only; no `origin` remote is configured and no push or deploy is performed. Timestamped SQL backups under `backups/` are operational artifacts and are intentionally not committed.
+- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads, SQL backups under `backups/`, and temp fixtures. `.env` was never staged. The final Package 43 commit is local only; no `origin` remote is configured and no push or deploy is performed. Timestamped SQL backups under `backups/` are operational artifacts and are intentionally not committed.

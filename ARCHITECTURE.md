@@ -61,7 +61,7 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-43 are now consolidated through this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -83,6 +83,25 @@ Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in th
 | 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
 | 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
 | 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view. |
+| 29 | `3583e96` | Self-service user profile (language, avatar, password) with audit-safe updates. |
+| 30 | `3583e96` | Admin account lifecycle controls and per-agent monthly sales targets. |
+| 31 | `1a8612f` | Tenant-scoped client portal with allow-listed deal, payment and document views. |
+| 32 | `1a8612f` | Interactive installment and mortgage simulator with bilingual amortization output. |
+| 33 | `7af60a6` | In-app notifications with read state, deep links and deduplicated reminder alerts. |
+| 34 | `7af60a6` | Side-by-side property comparison with bilingual features and payment terms. |
+| 35 | `79c4c2d` | Tenant-owned referral partners and snapshotted per-deal commission splits. |
+| 36 | `79c4c2d` | Reusable bilingual contract templates with validated placeholder rendering. |
+| 37 | `4808ae9` | Sales quota leaderboard with role-aware visibility and period filters. |
+| 38 | `4808ae9` | Validated CSV import wizard with preview, error report and BOM-safe template. |
+| 39 | `130a635` | White-label organization branding (logo, colors, theme, bilingual footer). |
+| 40 | `130a635` | SaaS plan tiers with tenant overrides and enforced user/property/deal quotas. |
+| 41 | `7484465` | Follow-up automation rules, deduplicated tasks and role-scoped task views. |
+| 42 | `7484465` | Visual unit inventory grid grouped by project, building and floor. |
+| 43 | This commit | Final full regression, refreshed idempotent demo seed, timestamped SQL backup, synced docs and live-service handover. |
+
+### Package 43 final handover architecture
+
+The demo seeder (`scripts/seed-demo.cjs`) shares one tenant and a single `prisma.$transaction(...)`; new packages 33–42 rows are stable `demo-` IDs upserted with `update: {}` so repeated runs never duplicate data or alter existing ADMIN credentials. `DEMO_MODELS` counts include the new tenant-owned tables, and `tests/package24-demo-seed.test.js` verifies their bilingual content and idempotency. Pure ESM helpers under `frontend/src/utils/` are mirrored by TypeScript helpers under `backend/utils/` where the compiled API is CommonJS. Backups are operator-run `pg_dump` snapshots in git-ignored `backups/`; the final commit contains code, tests and documentation only.
 
 ### Package 22 webhook contract
 
@@ -106,7 +125,7 @@ Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/D
 
 ## Tests
 
-`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 207 tests. Database-backed suites (including `auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24/26-28 and the Package 25 lifecycle suite) start the API and use Prisma against the configured PostgreSQL database; pure helper suites run offline. Each database-backed suite creates tagged fixtures and removes them in FK-safe order in `test.after`.
+`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 285 tests. Database-backed suites (including `auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24/26-28, 33-42 and the Package 25 lifecycle suite) start the API and use Prisma against the configured PostgreSQL database; pure helper suites run offline. Each database-backed suite creates tagged fixtures and removes them in FK-safe order in `test.after`.
 
 ## Legacy prototype
 

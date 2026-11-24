@@ -7,9 +7,14 @@ const {
   AppointmentStatus,
   AppointmentType,
   AreaUnit,
+  BrandingTheme,
+  ContractTemplateLanguage,
   DealStatus,
   DealType,
   ExpenseStatus,
+  FollowUpChannel,
+  FollowUpTaskStatus,
+  FollowUpTrigger,
   LeadPriorityTier,
   LeadStatus,
   MaintenancePriority,
@@ -17,11 +22,13 @@ const {
   MaintenanceStatus,
   OwnerPayoutStatus,
   PaymentStatus,
+  PlanTier,
   PropertyAttachmentKind,
   PropertyClassification,
   PropertyCondition,
   PropertyStatus,
   PropertyType,
+  ReferralSplitStatus,
   Role
 } = require('@prisma/client')
 
@@ -97,15 +104,23 @@ function computePriority(lead, now) {
 const DEMO_MODELS = [
   'user', 'owner', 'property', 'propertyImage', 'propertyDocument', 'lead', 'leadNote',
   'deal', 'dealClosingChecklist', 'payment', 'expense', 'ownerPayout',
-  'appointment', 'maintenanceRequest', 'branch', 'team'
+  'appointment', 'maintenanceRequest', 'branch', 'team',
+  // Packages 33-43 add these tenant-owned records. Existing demo models are
+  // enriched in place so older idempotency counts stay unchanged.
+  'notification', 'referralPartner', 'referralSplit', 'contractTemplate',
+  'organizationBranding', 'planQuota', 'followUpRule', 'followUpTask'
 ]
+const ORG_SCOPED_DEMO_MODELS = new Set([
+  'user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team',
+  'notification', 'referralPartner', 'referralSplit', 'contractTemplate',
+  'organizationBranding', 'planQuota', 'followUpRule', 'followUpTask'
+])
 
 async function demoCounts(organizationId) {
   const counts = {}
   for (const model of DEMO_MODELS) {
     const where = { id: { startsWith: 'demo-' } }
-    const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team'])
-    if (orgModels.has(model)) where.organizationId = organizationId
+    if (ORG_SCOPED_DEMO_MODELS.has(model)) where.organizationId = organizationId
     counts[model] = await prisma[model].count({ where })
   }
   return counts
@@ -444,6 +459,35 @@ async function main() {
     }
 
     const propertyIds = properties.map((property) => property.id)
+
+    // Packages 34 and 42 enrich the same demo properties instead of adding
+    // new rows, so Package 24's original counts remain unchanged.
+    const unitMeta = {
+      'demo-property-sz-001': {
+        features: 'Balcony / شرفة, Private terrace / شرفة خاصة, Elevator / مصعد',
+        paymentTerms: '40% down payment, 60% on handover / 40% مقدم و60% عند الاستلام',
+        projectName: 'Skyline Residence', buildingName: 'Block A', unitNumber: 'SZ-101'
+      },
+      'demo-property-sz-002': {
+        features: 'Garden / حديقة, Two receptions / منطقتا استقبال, Parking / موقف سيارة',
+        paymentTerms: '35% down payment, 65% over 12 months / 35% مقدم و65% على 12 شهرًا',
+        projectName: 'Skyline Residence', buildingName: 'Block B', unitNumber: 'SZ-201'
+      },
+      'demo-property-oct-001': {
+        features: 'Furnished / مفروش, Meeting room / قوة اجتماعات, Internet / إنترنت',
+        paymentTerms: 'Quarterly rent in advance / إيجار ربع سنوي مقدم',
+        projectName: 'November Business Hub', buildingName: 'Tower 1', unitNumber: 'OFF-82'
+      },
+      'demo-property-oct-002': {
+        features: 'Private pool / مسبح خاص, Maid room / غرفة خادمة, Garden / حديقة',
+        paymentTerms: '50% down payment, 50% at handover / 50% مقدم و50% عند الاستلام',
+        projectName: 'October Family Villas', buildingName: 'Villa 19', unitNumber: 'V-19'
+      }
+    }
+    for (const [id, meta] of Object.entries(unitMeta)) {
+      await tx.property.update({ where: { id }, data: meta })
+    }
+
     const leadSpecs = [
       {
         id: 'demo-lead-urgent', firstName: 'Nour', lastName: 'Farouk', source: 'Referral',
@@ -697,6 +741,160 @@ async function main() {
         notes: 'EN: Recurring demo maintenance. AR: صيانة تجريبية متكررة.'
       })
     }
+
+    // Package 33: stable in-app alerts for the seeded appointment, follow-up
+    // and installment walkthroughs.
+    const notificationSpecs = [
+      {
+        id: 'demo-notification-appointment', userId: agent.id,
+        type: 'APPOINTMENT_UPCOMING_24H',
+        title: 'Upcoming viewing / معاينة قادمة',
+        message: 'EN: Skyline viewing starts soon. AR: معاينة أفق السادس تبدأ قريبًا.',
+        actionUrl: '/appointments', entityType: 'Appointment', entityId: 'demo-appointment-sz-viewing',
+        isRead: false, metadata: { demo: true, reminderKind: 'appointment' }
+      },
+      {
+        id: 'demo-notification-followup', userId: teamLead.id,
+        type: 'LEAD_FOLLOW_UP_DUE_REMINDER',
+        title: 'Lead follow-up due / متابعة عميل مستحقة',
+        message: 'EN: Karim Nabil needs a follow-up. AR: كريم نبيل يحتاج إلى متابعة.',
+        actionUrl: '/leads', entityType: 'Lead', entityId: 'demo-lead-high',
+        isRead: false, metadata: { demo: true, reminderKind: 'leadFollowUp' }
+      },
+      {
+        id: 'demo-notification-payment', userId: accountant.id,
+        type: 'PAYMENT_DUE_SOON_REMINDER',
+        title: 'Installment due soon / دفعة مستحقة قريبًا',
+        message: 'EN: DEMO-DEAL-SZ-TOWNHOUSE installment 2 is due. AR: الدفعة الثانية لصفقة تاون هاوس مستحقة.',
+        actionUrl: '/finance/payments', entityType: 'Payment', entityId: 'demo-deal-sz-townhouse-install-2',
+        isRead: true, metadata: { demo: true, reminderKind: 'payment' }
+      }
+    ]
+    for (const notification of notificationSpecs) {
+      await upsertById(tx.notification, notification.id, {
+        ...notification,
+        organizationId: organization.id,
+        createdAt: daysFromNow(0, 8),
+        readAt: notification.isRead ? daysFromNow(0, 9) : null
+      })
+    }
+
+    // Package 35: a tenant-owned partner and one snapshotted deal split.
+    await upsertById(tx.referralPartner, 'demo-referral-partner', {
+      organizationId: organization.id,
+      name: 'Bilingual Referral Network',
+      nameAr: 'شبكة الإحالات ثنائية اللغة',
+      companyName: 'Bilingual Referral Network / شبكة الإحالات',
+      email: 'referrals.demo@estateos.local',
+      phone: '+20 100 888 1212',
+      commissionRate: 7.5,
+      notes: 'EN: Demo partner for the Skyline sale. AR: شريك تجريبي لبيع أفق السادس.',
+      isActive: true
+    })
+    await upsertById(tx.referralSplit, 'demo-referral-split-sz', {
+      organizationId: organization.id,
+      dealId: 'demo-deal-sz-sale',
+      partnerId: 'demo-referral-partner',
+      rate: 7.5,
+      amount: 354000,
+      currency: 'EGP',
+      status: ReferralSplitStatus.APPROVED,
+      notes: 'EN: Rate and amount snapshot for the active sale. AR: لقطة النسبة والمبلغ للبيع النشط.',
+      approvedAt: daysFromNow(-5),
+      paidAt: null
+    })
+
+    // Package 36: one bilingual reusable contract template.
+    await upsertById(tx.contractTemplate, 'demo-contract-template-sale', {
+      organizationId: organization.id,
+      name: 'Bilingual Sale Agreement',
+      nameAr: 'عقد البيع ثنائي اللغة',
+      language: ContractTemplateLanguage.BILINGUAL,
+      body: 'SALE AGREEMENT — {{organization_name}}. Client: {{client_name}}. Property: {{property_title}}, {{property_city}}, {{property_area}} sqm. Reference: {{deal_reference}}. Amount: {{deal_amount}} {{deal_currency}}. Agent: {{agent_name}}. Date: {{today}}.',
+      bodyAr: 'عقد البيع — {{organization_name}}. العميل: {{client_name}}. العقار: {{property_title}}، {{property_city}}، مساحة {{property_area}} متر. الرقم: {{deal_reference}}. المبلغ: {{deal_amount}} {{deal_currency}}. الوكيل: {{agent_name}}. التاريخ: {{today}}.',
+      version: 1,
+      isActive: true
+    })
+
+    // Packages 39-40: white-label identity and a real plan with enforceable caps.
+    await upsertById(tx.organizationBranding, 'demo-branding-estateos', {
+      organizationId: organization.id,
+      brandName: 'EstateOS Demo',
+      brandNameAr: 'إستيت أو إس التجريبي',
+      logoUrl: '/demo/branding/logo.svg',
+      faviconUrl: '/demo/branding/favicon.ico',
+      primaryColor: '#2563EB',
+      secondaryColor: '#0F172A',
+      accentColor: '#14B8A6',
+      supportEmail: 'support.demo@estateos.local',
+      supportPhone: '+20 100 999 0000',
+      footerText: 'Powered by EstateOS — Demo tenant',
+      footerTextAr: 'مدعوم بواسطة إستيت أو إس — مستأجر تجريبي',
+      theme: BrandingTheme.LIGHT,
+      isActive: true
+    })
+    await upsertById(tx.planQuota, 'demo-plan-quota-estateos', {
+      organizationId: organization.id,
+      plan: PlanTier.GROWTH,
+      userLimit: 150,
+      propertyLimit: 1000,
+      dealLimit: 5000,
+      storageMbLimit: 1000,
+      isActive: true
+    })
+
+    // Package 41: two active rules and two idempotent generated tasks.
+    const newLeadRule = await upsertById(tx.followUpRule, 'demo-followup-rule-new-lead', {
+      organizationId: organization.id,
+      name: 'Demo new lead follow-up',
+      nameAr: 'متابعة عميل جديد تجريبية',
+      trigger: FollowUpTrigger.NEW_LEAD,
+      conditionDays: 3,
+      channel: FollowUpChannel.NOTIFICATION,
+      template: 'Call {{client_name}} about {{deal_reference}}',
+      templateAr: 'اتصل بـ {{client_name}} بخصوص {{deal_reference}}',
+      priority: 10,
+      isActive: true
+    })
+    const stalledRule = await upsertById(tx.followUpRule, 'demo-followup-rule-stalled-deal', {
+      organizationId: organization.id,
+      name: 'Demo stalled deal follow-up',
+      nameAr: 'متابعة صفقة متوقفة تجريبية',
+      trigger: FollowUpTrigger.DEAL_STALLED,
+      conditionDays: 3,
+      channel: FollowUpChannel.EMAIL,
+      template: 'Follow up on {{deal_reference}} for {{client_name}}',
+      templateAr: 'متابعة الصفقة {{deal_reference}} للعميل {{client_name}}',
+      priority: 5,
+      isActive: true
+    })
+    await upsertById(tx.followUpTask, 'demo-followup-task-urgent', {
+      organizationId: organization.id,
+      ruleId: newLeadRule.id,
+      leadId: 'demo-lead-urgent',
+      dealId: null,
+      userId: agent.id,
+      title: 'Call Nour Farouk',
+      titleAr: 'اتصل بنور فاروق',
+      dueAt: daysFromNow(2),
+      status: FollowUpTaskStatus.PENDING,
+      sourceKey: 'demo:rule-new:lead:demo-lead-urgent',
+      notes: 'EN: Urgent referral walkthrough task. AR: مهمة الإحالة العاجلة.'
+    })
+    await upsertById(tx.followUpTask, 'demo-followup-task-stalled', {
+      organizationId: organization.id,
+      ruleId: stalledRule.id,
+      leadId: null,
+      dealId: 'demo-deal-sz-townhouse',
+      userId: agent.id,
+      title: 'Follow up on DEMO-DEAL-SZ-TOWNHOUSE',
+      titleAr: 'متابعة الصفقة DEMO-DEAL-SZ-TOWNHOUSE',
+      dueAt: daysFromNow(1),
+      status: FollowUpTaskStatus.COMPLETED,
+      sourceKey: 'demo:rule-stalled:deal:demo-deal-sz-townhouse',
+      completedAt: daysFromNow(-1),
+      notes: 'EN: Completed stalled-deal walkthrough task. AR: مهمة صفقة متوقفة مكتملة.'
+    })
 
     return { agent, accountant, teamLead, branch, team, admin }
   })

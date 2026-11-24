@@ -15,8 +15,16 @@ const orgSlug = process.env.DEMO_ORG_SLUG || 'estateos'
 const DEMO_MODELS = [
   'user', 'owner', 'property', 'propertyImage', 'propertyDocument', 'lead', 'leadNote',
   'deal', 'dealClosingChecklist', 'payment', 'expense', 'ownerPayout',
-  'appointment', 'maintenanceRequest', 'branch', 'team'
+  'appointment', 'maintenanceRequest', 'branch', 'team',
+  // Package 43 extends the same idempotent demo seed with packages 33-42 rows.
+  'notification', 'referralPartner', 'referralSplit', 'contractTemplate',
+  'organizationBranding', 'planQuota', 'followUpRule', 'followUpTask'
 ]
+const ORG_SCOPED_DEMO_MODELS = new Set([
+  'user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team',
+  'notification', 'referralPartner', 'referralSplit', 'contractTemplate',
+  'organizationBranding', 'planQuota', 'followUpRule', 'followUpTask'
+])
 
 function digest(value) {
   return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -33,10 +41,9 @@ async function adminFingerprint(organizationId) {
 
 async function demoCounts(organizationId) {
   const counts = {}
-  const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team'])
   for (const model of DEMO_MODELS) {
     const where = { id: { startsWith: 'demo-' } }
-    if (orgModels.has(model)) where.organizationId = organizationId
+    if (ORG_SCOPED_DEMO_MODELS.has(model)) where.organizationId = organizationId
     counts[model] = await prisma[model].count({ where })
   }
   return counts
@@ -200,4 +207,47 @@ test('Package 24: seeded records are bilingual and cover the walkthrough scenari
     deal: await prisma.deal.count({ where: { id: { startsWith: 'demo-deal-' }, organizationId: organization.id, branchId: branch.id, teamId: team.id } })
   }
   assert.deepEqual(groupedCounts, { property: 4, lead: 5, deal: 3 })
+})
+
+test('Package 43: demo seed covers packages 33-42 with bilingual, tenant-owned records', async () => {
+  const organization = await prisma.organization.findFirst({
+    where: { slug: orgSlug, deletedAt: null },
+    select: { id: true }
+  })
+  assert.ok(organization)
+
+  const [properties, notifications, partners, splits, templates, branding, planQuota, rules, tasks] = await Promise.all([
+    prisma.property.findMany({
+      where: { id: { startsWith: 'demo-property-' }, organizationId: organization.id },
+      select: { features: true, paymentTerms: true, projectName: true, buildingName: true, unitNumber: true }
+    }),
+    prisma.notification.findMany({ where: { id: { startsWith: 'demo-notification-' }, organizationId: organization.id } }),
+    prisma.referralPartner.findMany({ where: { id: { startsWith: 'demo-referral-' }, organizationId: organization.id } }),
+    prisma.referralSplit.findMany({ where: { id: { startsWith: 'demo-referral-split-' }, organizationId: organization.id } }),
+    prisma.contractTemplate.findMany({ where: { id: { startsWith: 'demo-contract-' }, organizationId: organization.id } }),
+    prisma.organizationBranding.findMany({ where: { id: { startsWith: 'demo-branding-' }, organizationId: organization.id } }),
+    prisma.planQuota.findMany({ where: { id: { startsWith: 'demo-plan-' }, organizationId: organization.id } }),
+    prisma.followUpRule.findMany({ where: { id: { startsWith: 'demo-followup-rule-' }, organizationId: organization.id } }),
+    prisma.followUpTask.findMany({ where: { id: { startsWith: 'demo-followup-task-' }, organizationId: organization.id } })
+  ])
+
+  assert.equal(properties.length, 4)
+  assert.ok(properties.every((property) => property.features && property.paymentTerms && property.projectName && property.buildingName && property.unitNumber))
+  assert.equal(notifications.length, 3)
+  assert.ok(notifications.every((row) => /[\u0600-\u06FF]/.test(row.title)))
+  assert.equal(partners.length, 1)
+  assert.match(partners[0].nameAr, /[\u0600-\u06FF]/)
+  assert.equal(splits.length, 1)
+  assert.equal(Number(splits[0].rate), 7.5)
+  assert.equal(templates.length, 1)
+  assert.match(templates[0].bodyAr, /[\u0600-\u06FF]/)
+  assert.match(templates[0].bodyAr, /\{\{deal_reference\}\}/)
+  assert.equal(branding.length, 1)
+  assert.equal(branding[0].organizationId, organization.id)
+  assert.equal(planQuota.length, 1)
+  assert.equal(planQuota[0].plan, 'GROWTH')
+  assert.equal(rules.length, 2)
+  assert.deepEqual([...new Set(rules.map((rule) => rule.trigger))].sort(), ['DEAL_STALLED', 'NEW_LEAD'])
+  assert.equal(tasks.length, 2)
+  assert.ok(tasks.every((task) => task.sourceKey && task.userId))
 })
