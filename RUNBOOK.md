@@ -6,10 +6,10 @@ This is the authoritative local setup and verification guide for the Vue 3 + Exp
 
 - PostgreSQL is reachable on port 5432; `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. Values are never printed here.
 - `npm run prisma:validate` passes; `npm run prisma:generate` regenerates Prisma Client 6.4.1.
-- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **186 tests**, and the production frontend build.
-- `npx prisma migrate status` reports **12 migrations found** and **Database schema is up to date**.
+- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **207 tests**, and the production frontend build.
+- `npx prisma migrate status` reports **15 migrations found** and **Database schema is up to date**.
 - The API runs on `http://localhost:3000`; the Vite frontend runs on `http://localhost:5173`. `GET /api/health` returns `200` both directly and through the Vite proxy, with `database.status: up`.
-- The repository is on `master`. Packages 11-24 are committed through `86886b3`; Package 22 webhooks are in `d1b0a8b`. Package 25 is the final consolidation commit. No `origin` remote is configured, so no push is performed.
+- The repository is on `master`. Packages 11-28 are committed through `7ee3de8` (`f01ba5b` Package 26, `cae3093` Package 27, `7ee3de8` Package 28). No `origin` remote is configured, so no push is performed.
 
 ## 1. PostgreSQL role and database (needed only on a fresh machine)
 
@@ -124,7 +124,7 @@ Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`; `C
 npm run verify
 ```
 
-This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **186 passed, 0 failed** from `node --test tests/**/*.test.js`, including the Package 25 owner-to-webhook lifecycle suite.
+This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **207 passed, 0 failed** from `node --test tests/**/*.test.js`, including the Package 25 owner-to-webhook lifecycle suite and the Package 26–28 WhatsApp, hierarchy and owner-portal security suites.
 
 Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, checklist/aging/payout/recurrence rules, webhook signing and SSRF guards, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Database-backed suites (`auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24 and Package 25) start the API and require a live, migrated database; pure helper suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures in FK-safe order.
 
@@ -141,7 +141,7 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 
 ## Delivery packages 5–10
 
-- **Package 5:** CSV export (BOM, CRLF, escaping, formula-injection protection), including paginated property exports.
+- **Package 5:** managed FX rates, public property share links and automated reminders. The shared CSV export path adds BOM, CRLF, escaping and formula-injection protection, including paginated property exports.
 - **Package 6:** lead follow-up buckets, lease renewal reminders and consolidated commission statements with FX history.
 - **Package 7:** owner statements, property price history, duplication sanitizer and share summaries.
 - **Package 8:** `POST /api/properties/import` and `POST /api/leads/import` validate up to 500 CSV rows (dry-run by default) before a single transaction; `POST /api/deals/:id/installments` builds paged `Payment` rows with `dueAt`; notification lists and the header dropdown accept `?category=` and only navigate through an explicit frontend target allowlist.
@@ -150,7 +150,7 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -168,11 +168,26 @@ Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in th
 | 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
 | 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
 | 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
-| 25 | Final consolidation commit | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 25 | `acb9035` | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
+| 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
+| 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view. |
 
 ### Package 22 webhook contract
 
 Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/DELETE /api/webhooks/endpoints/:id`, `GET /api/webhooks/deliveries`, `GET /api/webhooks/deliveries/:id`, `POST /api/webhooks/deliveries/:id/retry`. Events are exactly `property.created`, `lead.created`, `deal.stage_changed` and `payment.recorded`. The raw `whsec_...` secret is returned only on creation; only its hash is stored. Signatures use `X-Webhook-Signature` and a server-side pepper. Private/local receiver URLs are allowed only when `NODE_ENV != production` and `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### Package 26 WhatsApp contract
+
+The pure helpers live in `frontend/src/utils/whatsappCore.mjs` (typed through `whatsapp.ts`). E.164-style phone normalization rejects malformed numbers before building a `wa.me` link. Messages include only public listing/payment data; owner notes, internal notes and credentials are excluded. `GET/PATCH /api/settings/whatsapp-templates` is management-only and stores additive per-tenant overrides in `Settings.data.whatsappTemplates`; the fifth template key is `leadFollowUp`.
+
+### Package 27 hierarchy contract
+
+`Branch` and `Team` are tenant-scoped, nullable grouping columns on `User`, `Property`, `Lead` and `Deal`. Membership is resolved server-side from the database on each request, not from JWT claims. `TEAM_LEAD` has the same operational permission bits as `AGENT` but sees own, team and branch records; `ADMIN` sees all, `MANAGER` follows organization scope, and `AGENT` keeps its own/shared-catalog scope. The role enum and hierarchy columns were applied in separate additive migrations.
+
+### Package 28 owner portal contract
+
+Management-only endpoints: `GET /api/owners/:id/portal-link`, `POST /api/owners/:id/portal-token`, `POST /api/owners/:id/portal-token/regenerate`, and `POST /api/owners/:id/portal-token/revoke` (also `DELETE /api/owners/:id/portal-token`). The public read-only endpoint is `GET /api/public/owner-portal/:token`; the UI route is `/owner-portal/:token`. Only explicitly enabled, active owners in active organizations resolve. Responses are allow-listed to owner display/location, organization name, safe portfolio listing fields and deal-status counts; notes, payouts, amounts, assignments, documents and other tenants' data are never queried. Regeneration and revocation invalidate the previous token immediately; archiving an owner also clears the link.
 
 ### Package 25 lifecycle coverage
 
@@ -184,4 +199,4 @@ Operational note: in-memory rate limits are per API process. Use shared storage 
 
 - No credentials, passwords, full connection strings or secret values are printed by helper scripts or in this document.
 - No database data is deleted or reset by any script or migration here; `prisma migrate reset` is prohibited.
-- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads, SQL backups under `backups/`, and temp fixtures. `.env` was never staged. The final Package 25 commit is local only; no `origin` remote is configured and no push or deploy is performed.
+- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads, SQL backups under `backups/`, and temp fixtures. `.env` was never staged. The final Package 28 commit is local only; no `origin` remote is configured and no push or deploy is performed. Timestamped SQL backups under `backups/` are operational artifacts and are intentionally not committed.

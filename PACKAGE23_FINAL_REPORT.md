@@ -4,7 +4,9 @@ Date: 2026-11-24
 Branch: `master`  
 Repository: EstateOS
 
-This report records the **verified** state of the repository. It does not claim that packages which were requested but superseded were implemented.
+> **Historical snapshot.** This file records the verified state at Package 23 only. It has been superseded by [FINAL_CLOSURE_REPORT.md](FINAL_CLOSURE_REPORT.md), which covers Packages 1–28 through commit `7ee3de8` and the final documentation sync. The counts and "absent" rows below must not be read as the current repository state.
+
+This report records the **point-in-time verified** state of the repository. It does not claim that packages which were requested but superseded were implemented.
 
 ## 1. Verification
 

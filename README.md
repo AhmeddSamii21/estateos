@@ -36,7 +36,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run all 186 automated tests (`node --test tests/**/*.test.js`) |
+| `npm test` | Run all 207 automated tests (`node --test tests/**/*.test.js`) |
 | `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
 | `npm run typecheck` | Type-check both backend and frontend without emitting files |
 | `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
@@ -45,7 +45,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 | `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
 | `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
 
-Current verification status: **186 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
+Current verification status: **207 tests pass, 0 fail**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
 
 ## What the application does
 
@@ -56,11 +56,13 @@ Current verification status: **186 tests pass**, both typechecks pass, API compi
 - **Finance** — Payments, expenses, commissions, owner payouts and payment aging with decimal money handling, idempotency keys and approval/state rules.
 - **CSV export** — Available on Properties, Reports and the generic resource lists. The shared `downloadCsv` helper writes UTF-8 with a BOM (Arabic headers stay readable in Excel), CRLF line endings, quoted/escaped cells, and neutralizes spreadsheet formula injection. Property export pages through all filtered results.
 - **Share summary** — On Property Details, **Share Property** builds a plain-text, client-ready summary from listing fields only (title, reference, price, status, specifications, location, images and description). Owner/agent records, deals, finances, audit/activity, operational notes and other internal notes are deliberately excluded. It copies to the clipboard with a read-only preview fallback, and calls `POST /api/properties/:id/share-summary` to record an activity/audit entry. Both English and Arabic summaries are supported.
-- **Other modules** — Owners, appointments with advisory conflict warnings, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings.
+- **Other modules** — Owners, appointments with advisory conflict warnings, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings. Branch/Team grouping now scopes Users, Leads, Properties and Deals for `TEAM_LEAD` and other roles.
+- **WhatsApp handoff** — Bilingual EN/AR click-to-chat links build property-share, appointment, installment and lead-follow-up messages from public fields only; managers can add tenant-scoped template overrides.
+- **Owner portal** — Managers can generate, copy, regenerate and revoke a read-only link at `/owner-portal/:token`. The public API returns only allow-listed owner and portfolio fields; notes, assignments, payouts, financial data and other tenants' records are excluded.
 
 ## Delivery packages 5–10
 
-- **Package 5** — CSV export with UTF-8 BOM, CRLF, escaping and formula-injection protection; property export pages through all filtered results.
+- **Package 5** — Managed FX rates, public property share links and automated reminders; the shared CSV export path adds UTF-8 BOM, CRLF, escaping and formula-injection protection, with paginated property exports.
 - **Package 6** — lead follow-up buckets, lease renewal reminders and consolidated commission statements with historical FX snapshots.
 - **Package 7** — owner statements, property price history, sanitized property duplication and client-ready share summaries.
 - **Package 8** — CSV imports for properties/leads with dry-run validation, deal installment schedules with `Payment.dueAt`, and safe, category-filtered notification targets.
@@ -69,7 +71,7 @@ Current verification status: **186 tests pass**, both typechecks pass, API compi
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -87,7 +89,10 @@ Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in th
 | 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
 | 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
 | 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
-| 25 | Final consolidation commit | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 25 | `acb9035` | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
+| 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
+| 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view and copy/regenerate/revoke controls. |
 
 ### Package 22 webhook contract
 
@@ -101,4 +106,5 @@ Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/D
 
 - [RUNBOOK.md](RUNBOOK.md) — local setup, database steps, migration procedure, verification and safety notes.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit together.
+- [FINAL_CLOSURE_REPORT.md](FINAL_CLOSURE_REPORT.md) — Packages 1–28 checklist, final verification, commits, live-service check and upgrade roadmap.
 - `.env.example` — configuration template (no real secrets).

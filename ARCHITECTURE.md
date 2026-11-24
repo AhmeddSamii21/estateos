@@ -52,7 +52,7 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 
 ## Delivery packages 5–10
 
-- **Package 5** — `frontend/src/utils/csv.ts` export path shared by Properties, Reports and resource lists.
+- **Package 5** — `backend/utils/fx.ts`, `backend/routes/public.ts` and `backend/services/reminders.ts` provide managed FX conversion, safe share links and automated reminders; `frontend/src/utils/csv.ts` is the shared export path for Properties, Reports and resource lists.
 - **Package 6** — follow-up/lease helpers in `backend/utils/`, reminder jobs in `backend/services/`, consolidated statements in `commissionStatements.ts`.
 - **Package 7** — owner statement, price history and duplication helpers plus matching frontend utilities and detail-view panels.
 - **Package 8** — `csvImport.ts`, `propertyImport.ts`, `leadImport.ts`, `installmentSchedule.ts` and `notificationTargets.ts` keep parsing, math and URL safety pure; routes compose them with tenant scope and transactions. Import modals and a notification resolver live under `frontend/src/`.
@@ -61,7 +61,7 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 
 ## Delivery package status (2026-11-24)
 
-Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in this release. The table records the actual repository state.
+Packages 11-13 were earlier committed; Packages 14-28 are now consolidated in this release. The table records the actual repository state.
 
 | Package | Commit | Delivered capability |
 | --- | --- | --- |
@@ -79,7 +79,10 @@ Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in th
 | 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
 | 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
 | 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
-| 25 | Final consolidation commit | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 25 | `acb9035` | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+| 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
+| 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
+| 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view. |
 
 ### Package 22 webhook contract
 
@@ -89,9 +92,21 @@ Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/D
 
 `tests/package25-e2e-lifecycle.test.js` runs against the compiled API and a local mocked receiver. It covers owner/property/share link, public property read, lead scoring/recompute/filtering, appointment conflict warnings, deal checklist/override/`COMPLETED` ("WON" equivalent), installments/payments/aging, commissions/statements, maintenance/expense/recurrence, owner statement/payout settlement, activity CSV and signed webhook delivery verification. All fixtures are tagged and removed in FK-safe order.
 
+### Package 26 WhatsApp architecture
+
+`frontend/src/utils/whatsappCore.mjs` is pure ESM so the same logic runs in Vite and in CommonJS Node tests; `whatsappCore.d.mts` provides types and `whatsapp.ts` re-exports them for the app. Backend overrides are additive under `Settings.data.whatsappTemplates` and are validated before persistence. A failed override write never changes the existing template map.
+
+### Package 27 visibility architecture
+
+`backend/utils/visibility.ts` centralizes the role/team/branch predicates used by Properties, Leads, Deals and Users. `backend/routes/hierarchy.ts` manages tenant-scoped Branch/Team records, and `backend/utils/hierarchy.ts` resolves a user's current team/branch from the database per request. The `Role` enum migration is separate from the table/column migration so PostgreSQL can commit the new enum value before it is referenced.
+
+### Package 28 portal architecture
+
+`Owner.portalToken` is a unique nullable capability and `Owner.portalEnabled` is a revocation switch. `backend/routes/owners.ts` mints, rotates and clears the token only for owners in the caller's tenant; every owner response strips `portalToken`. `backend/routes/public.ts` resolves only active enabled links and builds a field-by-field allow list, so Prisma never selects internal notes, payouts, credentials, assignments or cross-tenant rows. `backend/utils/share.ts` supplies URL helpers, and `frontend/src/views/OwnerPortalView.vue` fetches the public endpoint without authentication.
+
 ## Tests
 
-`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 186 tests. Database-backed suites (including `auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24 and the Package 25 lifecycle suite) start the API and use Prisma against the configured PostgreSQL database; pure helper suites run offline. Each database-backed suite creates tagged fixtures and removes them in FK-safe order in `test.after`.
+`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 207 tests. Database-backed suites (including `auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24/26-28 and the Package 25 lifecycle suite) start the API and use Prisma against the configured PostgreSQL database; pure helper suites run offline. Each database-backed suite creates tagged fixtures and removes them in FK-safe order in `test.after`.
 
 ## Legacy prototype
 
