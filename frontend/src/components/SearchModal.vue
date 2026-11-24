@@ -65,7 +65,7 @@
                     :data-result-index="item.resultIndex"
                     role="option"
                     :aria-selected="activeIndex === item.resultIndex"
-                    @click="navigateTo(item.route)"
+                    @click="navigateTo(item)"
                     @mousemove="activeIndex = item.resultIndex"
                   >
                     <i :class="group.icon" class="result-icon"></i>
@@ -112,6 +112,7 @@ import { useRouter } from 'vue-router'
 import { useSearchStore } from '@/stores/search'
 import { useStore as useMainStore } from '@/stores'
 import type { SearchResult } from '@/types/search'
+import { pushRecentItem } from '@/utils/recentItems'
 
 interface NavigationItem extends SearchResult {
   resultIndex: number
@@ -130,6 +131,7 @@ const router = useRouter()
 const inputRef = ref<HTMLInputElement | null>(null)
 const localQuery = ref(search.query)
 const activeIndex = ref(-1)
+const recentScope = computed(() => String(ui.user?.id || ui.user?.email || 'anonymous'))
 
 const resultGroups = computed<ResultGroup[]>(() => {
   let index = 0
@@ -245,7 +247,7 @@ function handleKeydown(event: KeyboardEvent): void {
   if (event.key === 'Enter') {
     event.preventDefault()
     const selected = activeIndex.value >= 0 ? items[activeIndex.value] : items[0]
-    if (selected) navigateTo(selected.route)
+    if (selected) navigateTo(selected)
   }
 }
 
@@ -256,7 +258,15 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
   }
 }
 
-function navigateTo(route: string): void {
+function navigateTo(selected: NavigationItem): void {
+  const route = selected.route
+  const title = selected.title || detail(selected, 'referenceNumber') || detail(selected, 'originalName') || route
+  pushRecentItem(recentScope.value, {
+    id: String(selected.id),
+    type: selected.type,
+    title,
+    route
+  })
   close()
   void router.push(route)
 }

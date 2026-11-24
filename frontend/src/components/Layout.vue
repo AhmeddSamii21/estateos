@@ -115,6 +115,10 @@
             </div>
           </div>
           <LanguageSwitcher />
+          <button class="icon-btn command-btn" type="button" :aria-label="t('Command palette')" @click="commandPalette.open()">
+            <i class="fas fa-bolt"></i>
+            <kbd class="hotkey">{{ isMac ? '⌘K' : 'Ctrl K' }}</kbd>
+          </button>
           <button class="icon-btn" type="button" :aria-label="t('Search')" @click="openSearch">
             <i class="fas fa-search"></i>
           </button>
@@ -141,6 +145,7 @@
     </div>
 
     <SearchModal />
+    <CommandPalette />
   </div>
 </template>
 
@@ -149,7 +154,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import SearchModal from '@/components/SearchModal.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import { useStore } from '@/stores'
+import { useCommandPaletteStore } from '@/stores/commandPalette'
 import { useSearchStore } from '@/stores/search'
 import type { AppNotification } from '@/types'
 import {
@@ -163,6 +170,7 @@ type NotificationWithTarget = AppNotification & { targetUrl?: string | null }
 
 const store = useStore()
 const searchStore = useSearchStore()
+const commandPalette = useCommandPaletteStore()
 const route = useRoute()
 const router = useRouter()
 const notificationsOpen = ref(false)
@@ -180,6 +188,7 @@ const ArabicLabels: Record<string, string> = {
   'Not Found': 'غير موجود',
   Login: 'تسجيل الدخول',
   Search: 'بحث',
+  'Command palette': 'لوحة الأوامر',
   Properties: 'العقارات',
   'Search & Map': 'البحث والخريطة',
   Leads: 'العملاء المحتملون',
@@ -224,6 +233,7 @@ function t(label: string): string {
 }
 
 const pageTitle = computed(() => t(String(route.meta.title || 'EstateOS')))
+const isMac = computed(() => typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform))
 
 async function onLogout(): Promise<void> {
   await store.logout()
@@ -386,6 +396,8 @@ onBeforeUnmount(() => {
 .btn-ghost:hover { background: #e5e7eb; }
 .icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; color: #374151; cursor: pointer; }
 .icon-btn:hover { background: #f9fafb; }
+.command-btn { width: auto; gap: 0.4rem; padding-inline: 0.7rem; border-radius: 8px; }
+.hotkey { font-size: 0.68rem; font-weight: 600; color: #6b7280; border: 1px solid #e5e7eb; border-radius: 5px; padding: 0.1rem 0.3rem; background: #f9fafb; }
 .badge-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.68rem; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
 .notification-wrap { position: relative; }
 .notification-panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: min(360px, calc(100vw - 2rem)); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(15,23,42,0.12); z-index: 40; overflow: hidden; }
@@ -409,5 +421,11 @@ onBeforeUnmount(() => {
   .nav { flex-direction: row; flex-wrap: wrap; }
   .nav-group { margin-top: 0; }
   .content { padding: 1rem; }
+}
+
+@media (max-width: 560px) {
+  .topbar-actions { gap: 0.4rem; }
+  .topbar-title { font-size: 1rem; }
+  .user-chip, .command-btn .hotkey { display: none; }
 }
 </style>

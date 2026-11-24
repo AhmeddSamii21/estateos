@@ -1,0 +1,58 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const read = (relative) => fs.readFileSync(path.join(__dirname, '..', relative), 'utf8')
+
+test('Package 21: global Ctrl/Cmd+K command palette is wired', () => {
+  const palette = read('frontend/src/components/CommandPalette.vue')
+  const layout = read('frontend/src/components/Layout.vue')
+  const store = read('frontend/src/stores/commandPalette.ts')
+
+  assert.match(store, /isOpen/)
+  assert.match(store, /function toggle/)
+  assert.match(palette, /event\.ctrlKey \|\| event\.metaKey/)
+  assert.match(palette, /key\.toLowerCase\(\) === 'k'/)
+  assert.match(palette, /palette\.toggle\(\)/)
+  assert.match(palette, /ArrowDown/)
+  assert.match(palette, /ArrowUp/)
+  assert.match(palette, /event\.key === 'Escape'/)
+  assert.match(palette, /store\.isArabic \? 'لوحة الأوامر' : 'Command palette'/)
+  assert.match(palette, /label\('Quick actions', 'إجراءات سريعة'\)/)
+  assert.match(palette, /label\('Recent items', 'العناصر الأخيرة'\)/)
+  assert.match(palette, /label\('Saved filter presets', 'مرشحات محفوظة'\)/)
+  assert.match(palette, /@media \(max-width: 768px\)/)
+
+  assert.match(layout, /import CommandPalette from '@\/components\/CommandPalette\.vue'/)
+  assert.match(layout, /<CommandPalette \/>/)
+  assert.match(layout, /commandPalette\.open\(\)/)
+  assert.match(layout, /'Command palette': 'لوحة الأوامر'/)
+  assert.match(layout, /Ctrl K/)
+})
+
+test('Package 21: property filter presets and recent items persist locally', () => {
+  const filters = read('frontend/src/components/PropertyFilters.vue')
+  const presets = read('frontend/src/utils/filterPresets.ts')
+  const recent = read('frontend/src/utils/recentItems.ts')
+  const search = read('frontend/src/components/SearchModal.vue')
+
+  assert.match(presets, /estateos\.filter-presets\./)
+  assert.match(presets, /export function saveFilterPreset/)
+  assert.match(presets, /export function deleteFilterPreset/)
+  assert.match(presets, /export function findFilterPreset/)
+  assert.match(recent, /estateos\.recent-items\./)
+  assert.match(recent, /export function pushRecentItem/)
+  assert.match(recent, /export function listRecentItems/)
+
+  assert.match(filters, /import \{ useRoute \} from 'vue-router'/)
+  assert.match(filters, /route\.query\.preset/)
+  assert.match(filters, /onSavePreset/)
+  assert.match(filters, /onApplyPreset/)
+  assert.match(filters, /onDeletePreset/)
+  assert.match(filters, /store\.isArabic \? 'المرشحات المحفوظة' : 'Saved presets'/)
+  assert.match(filters, /@media \(max-width: 768px\)/)
+
+  assert.match(search, /pushRecentItem\(recentScope\.value/)
+  assert.match(search, /recentScope/)
+})
