@@ -259,19 +259,33 @@ router.post('/', uploadMiddleware, async (req, res, next) => {
   }
 })
 
+async function sendDocument(req: Request, res: Response, disposition: 'attachment' | 'inline'): Promise<void> {
+  const organizationId = organizationIdOf(req)
+  const where = accessWhere(organizationId, req)
+  where.id = String(req.params.id)
+  const document = await prisma.document.findFirst({ where })
+  if (!document) throw createError('Document not found', 404)
+  const buffer = await readDocument(document.storageKey)
+  res.setHeader('Content-Type', document.mimeType)
+  res.setHeader('Content-Length', String(buffer.length))
+  res.setHeader('Content-Disposition', `${disposition}; filename="${sanitizeOriginalName(document.originalName)}"`)
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.send(buffer)
+}
+
 router.get('/:id/download', async (req, res, next) => {
   try {
-    const organizationId = organizationIdOf(req)
-    const where = accessWhere(organizationId, req)
-    where.id = String(req.params.id)
-    const document = await prisma.document.findFirst({ where })
-    if (!document) throw createError('Document not found', 404)
-    const buffer = await readDocument(document.storageKey)
-    res.setHeader('Content-Type', document.mimeType)
-    res.setHeader('Content-Length', String(buffer.length))
-    res.setHeader('Content-Disposition', `attachment; filename="${sanitizeOriginalName(document.originalName)}"`)
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.send(buffer)
+    await sendDocument(req, res, 'attachment')
+  } catch (error) {
+    next(error)
+  }
+})
+
+// Authenticated inline delivery for previewing PDFs/images in a new tab.
+router.get('/:id/preview', async (req, res, next) => {
+  try {
+    await sendDocument(req, res, 'inline')
   } catch (error) {
     next(error)
   }

@@ -129,6 +129,36 @@
         <textarea v-model="form.description" rows="3"></textarea>
       </label>
 
+      <section v-if="isEdit" class="gallery-panel">
+        <div class="gallery-heading">
+          <h2>{{ store.isArabic ? 'معرض الصور' : 'Image gallery' }}</h2>
+          <label class="btn btn-quiet upload-btn">
+            <i class="fas fa-upload"></i> {{ store.isArabic ? 'رفع صور' : 'Upload images' }}
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden @change="onGalleryUpload" />
+          </label>
+        </div>
+        <p class="gallery-hint">{{ store.isArabic ? 'JPG أو PNG أو WebP، حتى 5 ميجابايت للصورة.' : 'JPG, PNG or WebP, up to 5 MB per image.' }}</p>
+        <div v-if="galleryError" class="error" role="alert">{{ galleryError }}</div>
+        <div v-if="galleryBusy" class="state">{{ store.isArabic ? 'جارٍ تحديث الصور…' : 'Updating images…' }}</div>
+        <div v-else-if="!galleryImages.length" class="state">{{ store.isArabic ? 'لا توجد صور لهذا العقار.' : 'No images for this property yet.' }}</div>
+        <div v-else class="gallery-grid">
+          <figure v-for="(image, index) in galleryImages" :key="image.id" class="gallery-item">
+            <img v-if="imageObjectUrls[image.id]" :src="imageObjectUrls[image.id]" :alt="image.originalName || form.title" loading="lazy" />
+            <div v-else class="image-placeholder"><i class="fas fa-image"></i></div>
+            <figcaption>
+              <span v-if="image.isPrimary" class="tag">{{ store.isArabic ? 'رئيسية' : 'Primary' }}</span>
+              <span class="image-name">{{ image.originalName || (store.isArabic ? 'صورة' : 'Image') }}</span>
+              <span class="image-actions">
+                <button type="button" class="link" :disabled="image.isPrimary || galleryBusy" @click="setPrimaryImage(image.id)">{{ store.isArabic ? 'تعيين كرئيسية' : 'Set primary' }}</button>
+                <button type="button" class="link" :disabled="index === 0 || galleryBusy" :aria-label="store.isArabic ? 'نقل لأعلى' : 'Move up'" @click="moveImage(index, -1)">↑</button>
+                <button type="button" class="link" :disabled="index === galleryImages.length - 1 || galleryBusy" :aria-label="store.isArabic ? 'نقل لأسفل' : 'Move down'" @click="moveImage(index, 1)">↓</button>
+                <button type="button" class="link danger" :disabled="galleryBusy" @click="removeImage(image.id)">{{ store.isArabic ? 'إزالة' : 'Remove' }}</button>
+              </span>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
       <div v-if="formError" class="error" role="alert">{{ formError }}</div>
 
       <div class="actions">
@@ -142,12 +172,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { apiGet } from '@/api/client'
+import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import { useStore } from '@/stores'
 import { DUPLICATE_DRAFT_KEY, DUPLICATE_QUERY_FLAG } from '@/utils/propertyDuplicate'
-import type { Owner } from '@/types'
+import { loadPropertyImageObjectUrl } from '@/utils/propertyImages'
+import type { Owner, PropertyImage } from '@/types'
 
 const props = defineProps<{ id?: string }>()
 const store = useStore()
@@ -157,6 +188,10 @@ const loadingRecord = ref(false)
 const formError = ref('')
 const duplicatePrefill = ref(false)
 const owners = ref<Owner[]>([])
+const galleryImages = ref<PropertyImage[]>([])
+const imageObjectUrls = ref<Record<string, string>>({})
+const galleryBusy = ref(false)
+const galleryError = ref('')
 
 const recordId = computed(() => props.id || String(route.params.id || ''))
 const isEdit = computed(() => Boolean(recordId.value))
@@ -249,7 +284,10 @@ onMounted(async () => {
     })
   }
   loadingRecord.value = false
+  void loadGallery()
 })
+
+onBeforeUnmount(() => releaseImageUrls())
 
 /** Reads the sanitized server draft handed off by PropertyDetail. */
 function applyDuplicateDraft(): void {
@@ -308,6 +346,90 @@ function ownerLabel(owner: Owner): string {
   const company = owner.companyName?.trim()
   const person = [owner.firstName, owner.lastName].filter(Boolean).join(' ').trim()
   return owner.displayName || company || person || owner.email || owner.id
+}
+
+function releaseImageUrls(): void {
+  Object.values(imageObjectUrls.value).forEach((url) => URL.revokeObjectURL(url))
+  imageObjectUrls.value = {}
+}
+
+async function loadGallery(): Promise<void> {
+  if (!isEdit.value) return
+  releaseImageUrls()
+  try {
+    const response = await apiGet<PropertyImage[]>(`/properties/${recordId.value}/images`)
+    galleryImages.value = [...(response.data || [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    const entries = await Promise.all(galleryImages.value.map(async (image) => {
+      const url = await loadPropertyImageObjectUrl(recordId.value, image.id).catch(() => '')
+      return [image.id, url] as const
+    }))
+    imageObjectUrls.value = Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
+  } catch {
+    galleryImages.value = []
+  }
+}
+
+async function onGalleryUpload(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const selected = Array.from(input.files || [])
+  input.value = ''
+  if (!selected.length) return
+  galleryBusy.value = true
+  galleryError.value = ''
+  try {
+    const body = new FormData()
+    selected.forEach((file) => body.append('files', file))
+    await apiPost(`/properties/${recordId.value}/images`, body)
+    await loadGallery()
+  } catch (error) {
+    galleryError.value = errorMessage(error)
+  } finally {
+    galleryBusy.value = false
+  }
+}
+
+async function setPrimaryImage(imageId: string): Promise<void> {
+  galleryBusy.value = true
+  galleryError.value = ''
+  try {
+    await apiPatch(`/properties/${recordId.value}/images/${imageId}`, { isPrimary: true })
+    await loadGallery()
+  } catch (error) {
+    galleryError.value = errorMessage(error)
+  } finally {
+    galleryBusy.value = false
+  }
+}
+
+async function moveImage(index: number, offset: number): Promise<void> {
+  const target = [...galleryImages.value]
+  const swap = index + offset
+  if (swap < 0 || swap >= target.length) return
+  ;[target[index], target[swap]] = [target[swap], target[index]]
+  galleryBusy.value = true
+  galleryError.value = ''
+  try {
+    await apiPatch(`/properties/${recordId.value}/images/reorder`, { orderedIds: target.map((image) => image.id) })
+    await loadGallery()
+  } catch (error) {
+    galleryError.value = errorMessage(error)
+  } finally {
+    galleryBusy.value = false
+  }
+}
+
+async function removeImage(imageId: string): Promise<void> {
+  if (!window.confirm(store.isArabic ? 'إزالة هذه الصورة؟' : 'Remove this image?')) return
+  galleryBusy.value = true
+  galleryError.value = ''
+  try {
+    await apiDelete(`/properties/${recordId.value}/images/${imageId}`)
+    await loadGallery()
+  } catch (error) {
+    galleryError.value = errorMessage(error)
+  } finally {
+    galleryBusy.value = false
+  }
 }
 
 function payload(): Record<string, unknown> {
@@ -375,4 +497,17 @@ input, select, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding
 .btn-quiet { background: #f3f4f6; color: #374151; }
 .error { margin-top: 1rem; padding: 0.6rem 0.8rem; background: #fef2f2; color: #991b1b; border-radius: 8px; font-size: 0.85rem; }
 .state { padding: 2rem; text-align: center; color: #6b7280; }
+.gallery-panel { margin-top: 1.2rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+.gallery-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.gallery-heading h2 { font-size: 1rem; margin: 0; }
+.gallery-hint { color: #9ca3af; font-size: 0.75rem; margin: 0.35rem 0 0.7rem; }
+.upload-btn { cursor: pointer; }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.gallery-item { margin: 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #f9fafb; }
+.gallery-item img, .image-placeholder { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: grid; place-items: center; background: #eef2ff; color: #94a3b8; }
+.gallery-item figcaption { display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.5rem; }
+.image-name { font-size: 0.75rem; color: #374151; word-break: break-word; }
+.image-actions { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; }
+.image-actions .link { margin: 0; padding: 0; font-size: 0.75rem; }
+.image-actions .link:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

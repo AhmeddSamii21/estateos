@@ -101,6 +101,9 @@
             <td>{{ formatSize(document.size) }}</td>
             <td><span class="tag">{{ document.status }}</span></td>
             <td class="actions-col">
+              <button type="button" class="link" :disabled="document.status === 'ARCHIVED'" @click="onPreview(document)">
+                {{ store.isArabic ? 'معاينة' : 'Preview' }}
+              </button>
               <button type="button" class="link" :disabled="document.status === 'ARCHIVED'" @click="onDownload(document)">
                 {{ store.isArabic ? 'تنزيل' : 'Download' }}
               </button>
@@ -124,7 +127,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
-import { downloadDocument } from '@/utils/documents'
+import { downloadDocument, previewDocument } from '@/utils/documents'
 import { useStore } from '@/stores'
 import type { DocumentRecord } from '@/types'
 
@@ -208,6 +211,14 @@ async function onUpload(): Promise<void> {
     formError.value = errorMessage(error)
   } finally {
     saving.value = false
+  }
+}
+
+async function onPreview(document: DocumentRecord): Promise<void> {
+  try {
+    await previewDocument(document.id)
+  } catch (error) {
+    store.error = errorMessage(error)
   }
 }
 
