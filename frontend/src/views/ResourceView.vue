@@ -80,6 +80,16 @@
       </button>
     </div>
 
+    <div v-if="isPayments" class="aging-filters">
+      <label>
+        <span>{{ store.isArabic ? 'الفئة العمرية' : 'Aging bucket' }}</span>
+        <select v-model="agingFilter">
+          <option value="">{{ store.isArabic ? 'كل الفئات' : 'All buckets' }}</option>
+          <option v-for="bucket in paymentAgingBuckets" :key="bucket" :value="bucket">{{ agingLabel(bucket, store.isArabic) }}</option>
+        </select>
+      </label>
+    </div>
+
     <div v-if="conflictWarning" class="warning" role="alert">
       <strong>{{ conflictWarning.message }}</strong>
       <ul v-if="conflictWarning.conflicts?.length">
@@ -155,6 +165,11 @@
                 </template>
                 <template v-else-if="isLeads && column.key === 'priorityScore'">
                   <span class="priority-score">{{ row[column.key] ?? 0 }}</span>
+                </template>
+                <template v-else-if="isPayments && column.key === 'aging'">
+                  <span class="aging-pill" :class="`aging-${String((row.aging as { bucket?: string } | undefined)?.bucket || 'CURRENT')}`">
+                    {{ agingLabel(String((row.aging as { bucket?: string } | undefined)?.bucket || 'CURRENT'), store.isArabic) }}
+                  </span>
                 </template>
                 <template v-else-if="isMaintenance && column.key === 'cost'">
                   <span class="expense-tag" :class="linkedExpenseId(row) ? 'linked' : 'none'">
@@ -331,6 +346,7 @@ import {
 import { downloadCsv, type CsvRow } from '@/utils/csv'
 import type { CsvImportPreview } from '@/utils/csvImport'
 import { followUpBucket, type FollowUpBucket } from '@/utils/followUps'
+import { agingLabel, PAYMENT_AGING_BUCKETS } from '@/utils/paymentAging'
 import { useStore } from '@/stores'
 import type { ApiWarning, AppointmentConflictInfo } from '@/types'
 
@@ -341,6 +357,7 @@ const config = computed<ResourceConfig>(() => resources[props.resource] || resou
 const isAppointments = computed(() => props.resource === 'appointments')
 const isDeals = computed(() => props.resource === 'deals')
 const isLeads = computed(() => props.resource === 'leads')
+const isPayments = computed(() => props.resource === 'payments')
 const isMaintenance = computed(() => props.resource === 'maintenance')
 
 type Row = Record<string, unknown> & { id: string }
@@ -370,6 +387,8 @@ const priorityFilter = ref('')
 const budgetMinFilter = ref('')
 const budgetMaxFilter = ref('')
 const sortFilter = ref('priority_desc')
+const agingFilter = ref('')
+const paymentAgingBuckets = PAYMENT_AGING_BUCKETS
 const prioritySaving = ref<string | null>(null)
 const priorityTiers = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const
 const leadSources = computed(() => Array.from(new Set(
@@ -470,6 +489,7 @@ watch(followUpFilter, () => { void load() })
 watch([sourceFilter, priorityFilter, budgetMinFilter, budgetMaxFilter, sortFilter], () => {
   if (isLeads.value) void load()
 })
+watch(agingFilter, () => { if (isPayments.value) void load() })
 
 onMounted(() => { void load(); applyQueryPrefill() })
 
@@ -478,6 +498,7 @@ async function load(): Promise<void> {
   try {
     const params: Record<string, string | number> = { limit: 100 }
     if (isDeals.value && statusFilter.value) params.status = statusFilter.value
+    if (isPayments.value && agingFilter.value) params.aging = agingFilter.value
     if (isLeads.value) {
       if (followUpFilter.value) params.followUp = followUpFilter.value
       if (sourceFilter.value.trim()) params.source = sourceFilter.value.trim()
@@ -896,6 +917,13 @@ h2 { margin: 0; font-size: 1.15rem; }
 .warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; border-radius: 10px; padding: 0.75rem 0.9rem; font-size: 0.84rem; }
 .warning ul { margin: 0.4rem 0 0; padding-inline-start: 1.2rem; }
 .status-pill { display: inline-block; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.72rem; background: #e0e7ff; color: #3730a3; }
+.aging-filters { display: flex; gap: 0.6rem; align-items: end; margin-bottom: 0.8rem; }
+.aging-filters label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: #374151; }
+.aging-pill { display: inline-block; white-space: nowrap; border-radius: 999px; padding: 0.15rem 0.5rem; font-size: 0.72rem; background: #f3f4f6; color: #4b5563; }
+.aging-1_30_DAYS { background: #fef3c7; color: #92400e; }
+.aging-31_60_DAYS { background: #ffedd5; color: #9a3412; }
+.aging-60_PLUS_DAYS { background: #fee2e2; color: #991b1b; }
+.aging-PAID { background: #dcfce7; color: #166534; }
 .status-draft { background: #f3f4f6; color: #4b5563; }
 .status-pending { background: #fef3c7; color: #92400e; }
 .status-active { background: #e0e7ff; color: #3730a3; }

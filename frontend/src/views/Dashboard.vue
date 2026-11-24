@@ -69,6 +69,23 @@
         </div>
       </section>
 
+      <section v-if="paymentAging" class="panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'أعمار الدفعات' : 'Payment aging' }}</h2>
+          <router-link to="/finance/payments">{{ store.isArabic ? 'عرض الدفعات' : 'View payments' }} {{ store.isArabic ? '←' : '→' }}</router-link>
+        </div>
+        <div class="aging-grid">
+          <article v-for="bucket in PAYMENT_AGING_BUCKETS" :key="bucket" class="aging-cell">
+            <span>{{ agingLabel(bucket, store.isArabic) }}</span>
+            <strong>{{ paymentAging[bucket].count }}</strong>
+            <small>{{ compact(Number(paymentAging[bucket].amount)) }}</small>
+          </article>
+        </div>
+        <p class="fx-note">
+          {{ store.isArabic ? 'المبالغ مجمّعة بوحدات العملة الأساسية.' : 'Amounts are grouped in base-currency units.' }}
+        </p>
+      </section>
+
       <section class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'أحدث العقارات' : 'Latest properties' }}</h2>
@@ -101,7 +118,8 @@ import { computed, onMounted, ref } from 'vue'
 import { apiGet } from '@/api/client'
 import { useStore } from '@/stores'
 import type { LeaseRenewalState } from '@/utils/leases'
-import type { ExchangeRateOverview, Property } from '@/types'
+import { agingLabel, PAYMENT_AGING_BUCKETS } from '@/utils/paymentAging'
+import type { ExchangeRateOverview, PaymentAgingSummary, Property } from '@/types'
 
 interface LeaseRenewal {
   id: string
@@ -123,6 +141,7 @@ type DashboardRange = '7d' | '30d' | '90d' | 'all'
 
 const store = useStore()
 const fxOverview = ref<ExchangeRateOverview | null>(null)
+const paymentAging = ref<PaymentAgingSummary | null>(null)
 const leaseRenewals = ref<LeaseRenewal[]>([])
 const range = ref<DashboardRange>('all')
 
@@ -153,6 +172,11 @@ onMounted(async () => {
       fxOverview.value = (await apiGet<ExchangeRateOverview>('/settings/exchange-rates')).data
     } catch {
       fxOverview.value = null
+    }
+    try {
+      paymentAging.value = (await apiGet<{ summary: PaymentAgingSummary }>('/finance/payments/aging')).data.summary
+    } catch {
+      paymentAging.value = null
     }
   }
 })
@@ -297,6 +321,11 @@ h2 { margin: 0; font-size: 1.05rem; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.2rem; border-block-end: 1px solid #eef2f7; }
 .panel-head a { color: #4f46e5; font-size: 0.84rem; text-decoration: none; }
 .rows { display: flex; flex-direction: column; }
+.aging-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.7rem; padding: 1rem 1.2rem 0.4rem; }
+.aging-cell { background: #f8fafc; border-radius: 10px; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.aging-cell span { font-size: 0.74rem; color: #6b7280; }
+.aging-cell strong { font-size: 1.3rem; color: #312e81; }
+.aging-cell small { color: #6b7280; }
 .row { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 0.8rem; align-items: center; padding: 0.8rem 1.2rem; border-block-end: 1px solid #f3f4f6; color: #374151; text-decoration: none; font-size: 0.88rem; }
 .row:hover { background: #f9fafb; }
 .ref { color: #6b7280; font-size: 0.78rem; }

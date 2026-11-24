@@ -134,6 +134,17 @@
         </p>
       </section>
 
+      <section v-if="summary.finance.paymentAging" class="panel">
+        <h2>{{ store.isArabic ? 'أعمار الدفعات' : 'Payment aging' }}</h2>
+        <div class="aging-grid">
+          <article v-for="bucket in paymentAgingBuckets" :key="bucket" class="aging-cell">
+            <span>{{ agingLabel(bucket, store.isArabic) }}</span>
+            <strong>{{ summary.finance.paymentAging[bucket].count }}</strong>
+            <small>{{ summary.finance.paymentAging[bucket].amount }}</small>
+          </article>
+        </div>
+      </section>
+
       <section class="panel">
         <h2>{{ store.isArabic ? 'أداء الفريق' : 'Team performance' }}</h2>
         <div v-if="!teamRows.length" class="empty">{{ store.isArabic ? 'لا توجد بيانات كافية.' : 'No team data available.' }}</div>
@@ -167,6 +178,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { apiGet, errorMessage, tokenStore, type ApiEnvelope } from '@/api/client'
 import BarList from '@/components/BarList.vue'
 import { downloadCsv, type CsvColumn, type CsvRow } from '@/utils/csv'
+import { agingLabel, PAYMENT_AGING_BUCKETS } from '@/utils/paymentAging'
 import { useStore } from '@/stores'
 import type { GroupCount, MoneyValue, ReportSummary } from '@/types'
 
@@ -242,6 +254,7 @@ type UserRow = { id: string; firstName?: string | null; email?: string }
 type UsersResponse = UserRow[] | { data: UserRow[] }
 
 const store = useStore()
+const paymentAgingBuckets = PAYMENT_AGING_BUCKETS
 const summary = ref<ReportSummaryWithExtras | null>(null)
 const team = ref<Partial<TeamReportResponse>>({})
 const loading = ref(true)
@@ -617,6 +630,11 @@ input { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem 0.6rem; f
 .finance span { font-size: 0.74rem; color: #6b7280; }
 .finance strong { color: #312e81; font-size: 0.95rem; }
 .finance-note { margin: 0.8rem 0 0; font-size: 0.75rem; color: #6b7280; }
+.aging-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; }
+.aging-cell { background: #f8fafc; border-radius: 8px; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.aging-cell span { font-size: 0.74rem; color: #6b7280; }
+.aging-cell strong { color: #312e81; font-size: 1.2rem; }
+.aging-cell small { color: #6b7280; }
 table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 th, td { text-align: start; padding: 0.55rem 0.6rem; border-bottom: 1px solid #f3f4f6; }
 th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }

@@ -146,6 +146,10 @@ enum LeadPriorityTier {
   URGENT
 }
 
+// Package 17: payment aging is derived from due dates so historical rows do
+// not need to be rewritten when a bucket boundary passes. The public bucket
+// values are CURRENT, 1_30_DAYS, 31_60_DAYS, 60_PLUS_DAYS and PAID.
+
 enum MaintenancePriority {
   LOW
   MEDIUM
@@ -541,6 +545,11 @@ model Deal {
   leaseEndAt     DateTime?
   renewalNoticeDays Int   @default(30)
   notes          String?
+  // Package 16: closing checklist guardrails. A stage override is only
+  // accepted from management and must always carry a written reason.
+  checklistOverrideReason String?
+  checklistOverriddenById String?
+  checklistOverriddenAt   DateTime?
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -554,6 +563,7 @@ model Deal {
   documents      Document[]
   expenses       Expense[]
   lead           Lead?      @relation(fields: [leadId], references: [id])
+  closingChecklist DealClosingChecklist[]
 
   @@index([organizationId])
   @@index([userId])
@@ -589,6 +599,28 @@ model Payment {
   @@index([dealId, dueAt])
   @@index([status])
   @@index([createdAt])
+}
+
+// Package 16: reusable closing checklist rows. Rows are created per deal and
+// can be toggled independently; completion of every row gates the COMPLETED
+// stage unless management supplies a documented override reason.
+model DealClosingChecklist {
+  id             String    @id @default(uuid())
+  dealId         String
+  organizationId String
+  itemKey        String
+  label          String
+  isCompleted    Boolean   @default(false)
+  completedAt    DateTime?
+  completedById  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  deal           Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, itemKey])
+  @@index([organizationId])
+  @@index([dealId])
 }
 
 model Expense {

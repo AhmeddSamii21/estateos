@@ -1,11 +1,11 @@
 import { Router } from 'express'
 import crypto from 'node:crypto'
-import { DealStatus, DealType, PaymentStatus, Prisma } from '@prisma/client'
+import { DealStatus, DealType, PaymentStatus, Prisma, Role } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { FINANCE_ROLES, leadScope, MANAGEMENT_ROLES, organizationIdOf, roleOf, userIdOf } from '../utils/scope'
-import { dateValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
+import { booleanValue, dateValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { convertToBase, parseMoney } from '../utils/money'
 import { logAudit, logPropertyActivity } from '../utils/audit'
 import { assertDealTransition, assertInitialDealStatus } from '../utils/dealStatus'
@@ -21,6 +21,11 @@ import {
   DEFAULT_RENEWAL_NOTICE_DAYS,
   MAX_RENEWAL_NOTICE_DAYS
 } from '../utils/leases'
+import {
+  checklistProgress,
+  ensureClosingChecklist,
+  isClosingChecklistItemKey
+} from '../utils/dealChecklist'
 
 function leaseNoticeValue(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined
@@ -111,7 +116,11 @@ router.get('/', async (req, res, next) => {
           property: { select: { id: true, title: true, referenceNumber: true, city: true } },
           user: { select: { id: true, email: true, firstName: true } },
           lead: { select: { id: true, firstName: true, lastName: true } },
-          _count: { select: { payments: true, commissions: true } }
+          closingChecklist: {
+            select: { itemKey: true, isCompleted: true },
+            orderBy: { createdAt: 'asc' }
+          },
+          _count: { select: { payments: true, commissions: true, closingChecklist: true } }
         }
       })
     ])
@@ -167,10 +176,95 @@ router.get('/lease-renewals', async (req, res, next) => {
   }
 })
 
+// Package 16: every deal has a standard closing checklist. Rows are created
+// on first access so deals created before this feature get the same guardrail.
+router.get('/:id/checklist', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    const deal = await prisma.deal.findFirst({
+      where: { id, organizationId, deletedAt: null },
+      select: { id: true, organizationId: true, userId: true }
+    })
+    if (!deal) throw createError('Deal not found', 404)
+    if (!canViewAllDeals(req.user?.role) && deal.userId !== userIdOf(req)) {
+      throw createError('Insufficient permissions to view this deal', 403)
+    }
+    await ensureClosingChecklist(prisma, deal)
+    const items = await prisma.dealClosingChecklist.findMany({
+      where: { dealId: id, organizationId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, itemKey: true, label: true, isCompleted: true, completedAt: true, completedById: true }
+    })
+    res.json({ success: true, data: checklistProgress(items) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/:id/checklist/:itemKey', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const id = String(req.params.id)
+    const itemKey = String(req.params.itemKey)
+    if (!isClosingChecklistItemKey(itemKey)) {
+      throw createError(`Checklist item must be one of: ${['PAYMENT_SETTLED', 'DOCUMENTS_COMPLETE', 'CONTRACT_SIGNED', 'HANDOVER_CONFIRMED'].join(', ')}`, 400)
+    }
+    if (req.body?.completed === undefined) throw createError('completed is required', 400)
+    const completed = booleanValue(req.body.completed, 'completed', false)
+
+    const deal = await prisma.deal.findFirst({
+      where: { id, organizationId, deletedAt: null },
+      select: { id: true, organizationId: true, userId: true }
+    })
+    if (!deal) throw createError('Deal not found', 404)
+    if (!canManageDeals(req.user?.role)) throw createError('Insufficient permissions to update this deal', 403)
+    if (req.user?.role === Role.AGENT && deal.userId !== userId) {
+      throw createError('Insufficient permissions to update this deal', 403)
+    }
+
+    await ensureClosingChecklist(prisma, deal)
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.dealClosingChecklist.update({
+        where: { dealId_itemKey: { dealId: id, itemKey } },
+        data: {
+          isCompleted: completed,
+          completedAt: completed ? new Date() : null,
+          completedById: completed ? userId : null
+        },
+        select: { id: true, itemKey: true, label: true, isCompleted: true, completedAt: true, completedById: true }
+      })
+      await logAudit(tx, {
+        userId,
+        action: 'DEAL_CHECKLIST_UPDATED',
+        entityType: 'Deal',
+        entityId: id,
+        details: { itemKey, completed }
+      })
+      const items = await tx.dealClosingChecklist.findMany({
+        where: { dealId: id, organizationId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, itemKey: true, label: true, isCompleted: true, completedAt: true, completedById: true }
+      })
+      return { row, progress: checklistProgress(items) }
+    })
+    res.json({ success: true, data: updated, message: 'Checklist updated' })
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
     const id = String(req.params.id)
+    const existing = await prisma.deal.findFirst({
+      where: { id, organizationId, deletedAt: null },
+      select: { id: true, organizationId: true, userId: true }
+    })
+    if (!existing) throw createError('Deal not found', 404)
+    await ensureClosingChecklist(prisma, existing)
     const deal = await prisma.deal.findFirst({
       where: { id, organizationId, deletedAt: null },
       include: {
@@ -186,7 +280,8 @@ router.get('/:id', async (req, res, next) => {
         payments: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
         commissions: { where: { deletedAt: null }, orderBy: { createdAt: 'desc' } },
         documents: { where: { status: 'ACTIVE', deletedAt: null } },
-        expenses: { where: { deletedAt: null } }
+        expenses: { where: { deletedAt: null } },
+        closingChecklist: { orderBy: { createdAt: 'asc' } }
       }
     })
     if (!deal) throw createError('Deal not found', 404)
@@ -259,6 +354,7 @@ router.post('/', async (req, res, next) => {
           notes: optionalString(req.body?.notes, 'notes', 5000)
         }
       })
+      await ensureClosingChecklist(tx, created)
       await logAudit(tx, { userId, action: 'DEAL_CREATED', entityType: 'Deal', entityId: created.id, details: { amount, currency, baseAmount: conversion.baseAmount, status, propertyId } })
       await logPropertyActivity(tx, {
         propertyId,
@@ -433,6 +529,29 @@ router.patch('/:id', async (req, res, next) => {
     assertValidLease({ leaseStartAt, leaseEndAt, renewalNoticeDays })
 
     const data: Prisma.DealUpdateInput = {}
+    const completing = nextStatus === DealStatus.COMPLETED && existing.status !== DealStatus.COMPLETED
+    let checklistOverride: { reason: string; by: string; at: Date } | undefined
+    if (completing) {
+      await ensureClosingChecklist(prisma, existing)
+      const checklistItems = await prisma.dealClosingChecklist.findMany({
+        where: { dealId: id, organizationId },
+        select: { id: true, itemKey: true, label: true, isCompleted: true, completedAt: true, completedById: true }
+      })
+      if (!checklistProgress(checklistItems).isComplete) {
+        const reason = optionalString(body.checklistOverrideReason, 'checklistOverrideReason', 1000)
+        if (!reason) {
+          throw createError('All closing checklist items must be completed, or provide checklistOverrideReason', 400)
+        }
+        const role = roleOf(req)
+        if (!role || !MANAGEMENT_ROLES.includes(role)) {
+          throw createError('Only ADMIN or MANAGER can override the closing checklist', 403)
+        }
+        checklistOverride = { reason, by: userId, at: new Date() }
+        data.checklistOverrideReason = reason
+        data.checklistOverriddenById = userId
+        data.checklistOverriddenAt = checklistOverride.at
+      }
+    }
     if (body.status !== undefined) data.status = nextStatus
     if (body.type !== undefined) data.type = enumValue(body.type, 'type', Object.values(DealType))
     if (body.notes !== undefined) data.notes = optionalString(body.notes, 'notes', 5000)
@@ -490,7 +609,13 @@ router.patch('/:id', async (req, res, next) => {
         action: stageChanged ? 'DEAL_STATUS_CHANGED' : 'DEAL_UPDATED',
         entityType: 'Deal',
         entityId: id,
-        details: { before: existing.status, after: nextStatus, fields: Object.keys(data), baseAmount: conversion?.baseAmount }
+        details: {
+          before: existing.status,
+          after: nextStatus,
+          fields: Object.keys(data),
+          baseAmount: conversion?.baseAmount,
+          ...(checklistOverride ? { checklistOverride: checklistOverride.reason } : {})
+        }
       })
       if (stageChanged) {
         await logPropertyActivity(tx, {

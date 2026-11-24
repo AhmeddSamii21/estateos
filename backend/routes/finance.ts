@@ -28,6 +28,13 @@ import {
   commissionStatementScope,
   type StatementCommissionRow
 } from '../utils/commissionStatements'
+import {
+  buildPaymentAgingSummary,
+  PAYMENT_AGING_BUCKETS,
+  paymentAgingBucket,
+  paymentAgingWhere,
+  type PaymentAgingBucket
+} from '../utils/paymentAging'
 
 const router = Router()
 
@@ -126,6 +133,21 @@ async function assertUser(userId: string, organizationId: string) {
   })
   if (!user) throw createError('User not found', 404)
   return user
+}
+
+function withAging<T extends {
+  amount: Prisma.Decimal
+  baseAmount: Prisma.Decimal | null
+  status: PaymentStatus
+  dueAt: Date | null
+  createdAt: Date
+}>(payment: T) {
+  return { ...payment, aging: paymentAgingBucket(payment) }
+}
+
+function agingFilter(value: unknown): PaymentAgingBucket | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  return enumValue(value, 'aging', PAYMENT_AGING_BUCKETS)
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +254,8 @@ router.get('/payments', async (req, res, next) => {
     const where: Prisma.PaymentWhereInput = { deletedAt: null, deal: { organizationId } }
     if (req.query.dealId) where.dealId = String(req.query.dealId)
     if (req.query.status) where.status = enumValue(req.query.status, 'status', Object.values(PaymentStatus))
+    const bucket = agingFilter(req.query.aging)
+    if (bucket) where.AND = [paymentAgingWhere(bucket)]
     if (req.query.from || req.query.to) {
       where.createdAt = {
         ...(req.query.from ? { gte: dateValue(req.query.from, 'from', true)! } : {}),
@@ -239,7 +263,7 @@ router.get('/payments', async (req, res, next) => {
       }
     }
 
-    const [total, payments] = await Promise.all([
+    const [total, payments, agingRows] = await Promise.all([
       prisma.payment.count({ where }),
       prisma.payment.findMany({
         where,
@@ -247,9 +271,50 @@ router.get('/payments', async (req, res, next) => {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: { deal: { select: { id: true, referenceNumber: true, currency: true, amount: true } } }
+      }),
+      prisma.payment.findMany({
+        where,
+        take: 10000,
+        select: { amount: true, baseAmount: true, status: true, dueAt: true, createdAt: true }
       })
     ])
-    res.json({ success: true, data: payments, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    res.json({
+      success: true,
+      data: payments.map(withAging),
+      agingSummary: buildPaymentAgingSummary(agingRows),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/** Organization-wide aging snapshot used by the dashboard and reports. */
+router.get('/payments/aging', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const where: Prisma.PaymentWhereInput = { deletedAt: null, deal: { organizationId } }
+    if (req.query.dealId) where.dealId = String(req.query.dealId)
+    const bucket = agingFilter(req.query.aging)
+    if (bucket) where.AND = [paymentAgingWhere(bucket)]
+    if (req.query.from || req.query.to) {
+      where.createdAt = {
+        ...(req.query.from ? { gte: dateValue(req.query.from, 'from', true)! } : {}),
+        ...(req.query.to ? { lte: dateValue(req.query.to, 'to', true)! } : {})
+      }
+    }
+    const rows = await prisma.payment.findMany({
+      where,
+      take: 10000,
+      select: { amount: true, baseAmount: true, status: true, dueAt: true, createdAt: true }
+    })
+    res.json({
+      success: true,
+      data: {
+        summary: buildPaymentAgingSummary(rows),
+        total: rows.length
+      }
+    })
   } catch (error) {
     next(error)
   }
@@ -263,7 +328,7 @@ router.get('/payments/summary', async (req, res, next) => {
     const payments = await prisma.payment.findMany({
       where: { dealId, deletedAt: null },
       take: 10000,
-      select: { amount: true, baseAmount: true, currency: true, status: true, deletedAt: true }
+      select: { amount: true, baseAmount: true, currency: true, status: true, deletedAt: true, dueAt: true, createdAt: true }
     })
     const received = receivedAmount(payments)
     const dealBase = deal.baseAmount?.toString() || deal.amount.toString()
@@ -277,7 +342,8 @@ router.get('/payments/summary', async (req, res, next) => {
         currency: deal.currency,
         received,
         outstanding,
-        payments: payments.length
+        payments: payments.length,
+        aging: buildPaymentAgingSummary(payments)
       }
     })
   } catch (error) {
@@ -319,6 +385,7 @@ router.post('/payments', async (req, res, next) => {
           exchangeRate: conversion.exchangeRate,
           baseAmount: conversion.baseAmount,
           paidAt,
+          dueAt: dateValue(req.body?.dueAt, 'dueAt'),
           createdById: userId
         }
       })
@@ -347,7 +414,7 @@ router.post('/payments', async (req, res, next) => {
       return created
     })
 
-    res.status(201).json({ success: true, data: payment, message: 'Payment recorded successfully' })
+    res.status(201).json({ success: true, data: withAging(payment), message: 'Payment recorded successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return next(createError('Duplicate payment reference or idempotency key', 409))
@@ -384,6 +451,7 @@ router.patch('/payments/:id', async (req, res, next) => {
     if (body.reference !== undefined) data.reference = optionalString(body.reference, 'reference', 100)
     if (body.notes !== undefined) data.notes = optionalString(body.notes, 'notes', 5000)
     if (body.paidAt !== undefined) data.paidAt = dateValue(body.paidAt, 'paidAt')
+    if (body.dueAt !== undefined) data.dueAt = dateValue(body.dueAt, 'dueAt')
 
     const payment = await prisma.$transaction(async (tx) => {
       const updated = await tx.payment.update({ where: { id }, data })
@@ -414,7 +482,7 @@ router.patch('/payments/:id', async (req, res, next) => {
       }
       return updated
     })
-    res.json({ success: true, data: payment, message: 'Payment updated successfully' })
+    res.json({ success: true, data: withAging(payment), message: 'Payment updated successfully' })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return next(createError('Duplicate payment reference', 409))

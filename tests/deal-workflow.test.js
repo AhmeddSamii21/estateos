@@ -205,6 +205,15 @@ test('deal updates enforce valid transitions and close dates', async () => {
   assert.equal(invalid.status, 400)
   assert.match(invalid.data.error.message, /Invalid deal status transition/)
 
+  // Package 16 guardrail: completing a deal requires the closing checklist.
+  for (const itemKey of ['PAYMENT_SETTLED', 'DOCUMENTS_COMPLETE', 'CONTRACT_SIGNED', 'HANDOVER_CONFIRMED']) {
+    const checklist = await api('PATCH', `/api/deals/${id}/checklist/${itemKey}`, {
+      token: state.tokens.AGENT_A,
+      body: { completed: true }
+    })
+    assert.equal(checklist.status, 200, `checklist item ${itemKey} should be toggleable`)
+  }
+
   for (const status of ['PENDING', 'ACTIVE', 'COMPLETED']) {
     const response = await api('PATCH', `/api/deals/${id}`, {
       token: state.tokens.AGENT_A,

@@ -234,6 +234,9 @@ export interface Deal {
   leaseEndAt?: string | null
   renewalNoticeDays?: number | null
   notes?: string | null
+  checklistOverrideReason?: string | null
+  checklistOverriddenAt?: string | null
+  closingChecklist?: DealChecklistItem[]
   createdAt: string
   updatedAt: string
   property?: Pick<Property, 'id' | 'title' | 'referenceNumber' | 'city' | 'address'> | null
@@ -247,6 +250,37 @@ export interface Deal {
   _count?: { payments?: number; commissions?: number }
 }
 
+export interface DealChecklistItem {
+  id: string
+  itemKey: string
+  label: string
+  isCompleted: boolean
+  completedAt?: string | null
+  completedById?: string | null
+}
+
+export interface DealChecklistProgress {
+  completed: number
+  total: number
+  isComplete: boolean
+  items: DealChecklistItem[]
+}
+
+export type PaymentAgingBucket = 'CURRENT' | '1_30_DAYS' | '31_60_DAYS' | '60_PLUS_DAYS' | 'PAID'
+
+export interface PaymentAgingResult {
+  bucket: PaymentAgingBucket
+  daysPastDue: number
+}
+
+export interface PaymentAgingSummaryRow {
+  count: number
+  amount: MoneyValue
+  baseAmount: MoneyValue
+}
+
+export type PaymentAgingSummary = Record<PaymentAgingBucket, PaymentAgingSummaryRow>
+
 export interface Payment {
   id: string
   dealId: string
@@ -259,8 +293,10 @@ export interface Payment {
   reference?: string | null
   idempotencyKey?: string | null
   notes?: string | null
+  dueAt?: string | null
   paidAt?: string | null
   createdAt: string
+  aging?: PaymentAgingResult
 }
 
 export interface PaymentSummary {
@@ -270,6 +306,7 @@ export interface PaymentSummary {
   received: MoneyValue
   outstanding: MoneyValue
   payments: number
+  aging?: PaymentAgingSummary
 }
 
 export interface Expense {
@@ -483,6 +520,7 @@ export interface ReportSummary {
   deals: { total: number; active: number; completed: number }
   finance: {
     payments: Array<{ currency: string; amount: MoneyValue; baseAmount: MoneyValue }>
+    paymentAging?: PaymentAgingSummary
     expenses: Array<{ currency: string; amount: MoneyValue; baseAmount: MoneyValue }>
     commissions: Array<{ currency: string; amount: MoneyValue; baseAmount: MoneyValue }>
     paymentTotalBase: MoneyValue

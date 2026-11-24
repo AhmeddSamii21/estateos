@@ -18,6 +18,7 @@ import { sumMoney } from '../utils/money'
 import { appointmentScope } from '../utils/appointments'
 import { summarizeCurrencyAmounts } from '../utils/fx'
 import { buildFunnelMetrics, uncontactedLeadCsv, uncontactedLeadWhere } from '../utils/reportMetrics'
+import { buildPaymentAgingSummary } from '../utils/paymentAging'
 
 const router = Router()
 router.use(authMiddleware, requireRole(REPORT_ROLES))
@@ -175,6 +176,11 @@ router.get('/summary', async (req, res, next) => {
       organizationId,
       paymentSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount) }))
     )
+    const paymentAgingRows = await prisma.payment.findMany({
+      where: { deletedAt: null, deal: { organizationId }, ...range },
+      take: 10000,
+      select: { amount: true, baseAmount: true, status: true, dueAt: true, createdAt: true }
+    })
 
     const available = propertiesByStatus.find((row) => row.status === PropertyStatus.AVAILABLE)?._count._all || 0
     const activeDeals = dealCounts.filter((deal) => deal.status === DealStatus.ACTIVE || deal.status === DealStatus.PENDING).length
@@ -196,6 +202,7 @@ router.get('/summary', async (req, res, next) => {
         deals: { total: dealCounts.length, active: activeDeals, completed: completedDeals },
         finance: {
           payments: paymentSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
+          paymentAging: buildPaymentAgingSummary(paymentAgingRows),
           expenses: expenseSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
           commissions: commissionSums.map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
           paymentTotalBase: sumMoney(paymentSums.map((row) => moneyString(row._sum.baseAmount || row._sum.amount))),
@@ -259,9 +266,15 @@ router.get('/financial', async (req, res, next) => {
         _count: { _all: true }
       })
     ])
+    const paymentAgingRows = await prisma.payment.findMany({
+      where: { deletedAt: null, deal: { organizationId }, ...range },
+      take: 10000,
+      select: { amount: true, baseAmount: true, status: true, dueAt: true, createdAt: true }
+    })
     res.json({
       success: true,
       data: {
+        paymentAging: buildPaymentAgingSummary(paymentAgingRows),
         dealValue: deals.map((row) => ({ currency: row.currency, status: row.status, amount: moneyString(row._sum.amount), count: row._count._all })),
         cashReceived: payments.filter((row) => row.status === PaymentStatus.COMPLETED).map((row) => ({ currency: row.currency, amount: moneyString(row._sum.amount), baseAmount: moneyString(row._sum.baseAmount) })),
         outstandingByStatus: payments.filter((row) => row.status !== PaymentStatus.COMPLETED).map((row) => ({ currency: row.currency, status: row.status, amount: moneyString(row._sum.amount) })),

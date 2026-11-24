@@ -52,6 +52,43 @@
         <p v-if="deal.notes" class="description">{{ deal.notes }}</p>
       </section>
 
+      <section class="panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'قائمة الإغلاق' : 'Closing checklist' }}</h2>
+          <span class="tag" v-if="checklist">
+            {{ checklist.completed }}/{{ checklist.total }}
+          </span>
+        </div>
+        <div v-if="!checklist?.items.length" class="empty">
+          {{ store.isArabic ? 'لا توجد عناصر في القائمة.' : 'No checklist items yet.' }}
+        </div>
+        <div v-else class="list">
+          <div v-for="item in checklist.items" :key="item.id" class="list-row">
+            <label class="check-item">
+              <input
+                type="checkbox"
+                :checked="item.isCompleted"
+                :disabled="!canEdit || checklistSaving === item.itemKey || deal.status === 'COMPLETED'"
+                @change="onChecklistToggle(item, $event)"
+              />
+              <span>{{ checklistLabel(item) }}</span>
+            </label>
+            <small v-if="item.completedAt" class="muted">{{ formatDate(item.completedAt) }}</small>
+          </div>
+        </div>
+        <div v-if="checklist && !checklist.isComplete && deal.status !== 'COMPLETED' && canEdit" class="checklist-override">
+          <label>
+            <span>{{ store.isArabic ? 'سبب التجاوز (للمديرين فقط)' : 'Override reason (ADMIN/MANAGER only)' }}</span>
+            <input v-model="overrideReason" maxlength="1000" :placeholder="store.isArabic ? 'اشرح سبب الإغلاق قبل اكتمال القائمة' : 'Explain why closing before the checklist is complete'" />
+          </label>
+          <p class="hint">
+            {{ store.isArabic
+              ? 'لا يمكن إكمال الصفقة قبل اكتمال القائمة إلا بسبب مكتوب من مدير أو مدير عام.'
+              : 'A deal cannot move to Completed until every item is checked, unless management records a reason.' }}
+          </p>
+        </div>
+      </section>
+
       <section v-if="isRental" class="panel">
         <div class="panel-head">
           <h2>{{ store.isArabic ? 'عقد الإيجار والتجديد' : 'Lease & renewal' }}</h2>
@@ -199,6 +236,10 @@
               <input v-model="paymentForm.reference" />
             </label>
             <label>
+              <span>{{ store.isArabic ? 'تاريخ الاستحقاق' : 'Due date' }}</span>
+              <input v-model="paymentForm.dueAt" type="date" />
+            </label>
+            <label>
               <span>{{ store.isArabic ? 'تاريخ الدفع' : 'Paid at' }}</span>
               <input v-model="paymentForm.paidAt" type="date" />
             </label>
@@ -207,11 +248,12 @@
 
           <div v-if="!deal.payments?.length" class="empty">{{ store.isArabic ? 'لا توجد دفعات.' : 'No payments recorded.' }}</div>
           <table v-else>
-            <thead><tr><th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th><th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th><th>{{ store.isArabic ? 'الطريقة' : 'Method' }}</th><th>{{ store.isArabic ? 'التاريخ' : 'Date' }}</th><th>{{ store.isArabic ? 'الاستحقاق' : 'Due date' }}</th></tr></thead>
+            <thead><tr><th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th><th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th><th>{{ store.isArabic ? 'الفئة العمرية' : 'Aging' }}</th><th>{{ store.isArabic ? 'الطريقة' : 'Method' }}</th><th>{{ store.isArabic ? 'التاريخ' : 'Date' }}</th><th>{{ store.isArabic ? 'الاستحقاق' : 'Due date' }}</th></tr></thead>
             <tbody>
               <tr v-for="payment in paymentsWithDueAt" :key="payment.id">
                 <td>{{ money(payment.amount, payment.currency) }}</td>
                 <td>{{ label(payment.status) }}</td>
+                <td><span class="aging-pill" :class="`aging-${payment.aging?.bucket || 'CURRENT'}`">{{ agingLabel(payment.aging?.bucket || 'CURRENT') }}</span></td>
                 <td>{{ payment.method || '—' }}</td>
                 <td>{{ formatDate(payment.paidAt || payment.createdAt) }}</td>
                 <td>{{ formatDate(payment.dueAt) }}</td>
@@ -294,8 +336,16 @@ import {
   type InstallmentFrequency
 } from '@/utils/installments'
 import { daysUntilLeaseEnd, leaseRenewalState, type LeaseRenewalState } from '@/utils/leases'
+import { agingLabel } from '@/utils/paymentAging'
 import { useStore } from '@/stores'
-import type { Deal, MoneyValue, Payment, PaymentSummary } from '@/types'
+import type {
+  Deal,
+  DealChecklistItem,
+  DealChecklistProgress,
+  MoneyValue,
+  Payment,
+  PaymentSummary
+} from '@/types'
 
 type PaymentWithDueAt = Payment & { dueAt?: string | null }
 
@@ -304,6 +354,9 @@ const route = useRoute()
 const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
 const deal = ref<Deal | null>(null)
 const summary = ref<PaymentSummary | null>(null)
+const checklist = ref<DealChecklistProgress | null>(null)
+const checklistSaving = ref<string | null>(null)
+const overrideReason = ref('')
 const loading = ref(true)
 const saving = ref(false)
 const actionError = ref('')
@@ -321,6 +374,7 @@ const paymentForm = reactive({
   status: 'PENDING',
   method: '',
   reference: '',
+  dueAt: '',
   paidAt: ''
 })
 
@@ -397,6 +451,44 @@ function statusClass(status: string): string {
   return `status-${status.toLowerCase().replaceAll('_', '-')}`
 }
 
+const CHECKLIST_LABELS: Record<string, [string, string]> = {
+  PAYMENT_SETTLED: ['Payment settled', 'تم تسوية الدفعات'],
+  DOCUMENTS_COMPLETE: ['Documents complete', 'الوثائق مكتملة'],
+  CONTRACT_SIGNED: ['Contract signed', 'العقد موقّع'],
+  HANDOVER_CONFIRMED: ['Handover confirmed', 'تم تأكيد التسليم']
+}
+
+function checklistLabel(item: DealChecklistItem): string {
+  const pair = CHECKLIST_LABELS[item.itemKey]
+  return pair ? (store.isArabic ? pair[1] : pair[0]) : item.label
+}
+
+async function loadChecklist(id: string): Promise<void> {
+  try {
+    checklist.value = (await apiGet<DealChecklistProgress>(`/deals/${id}/checklist`)).data
+  } catch {
+    checklist.value = null
+  }
+}
+
+async function onChecklistToggle(item: DealChecklistItem, event: Event): Promise<void> {
+  if (!deal.value) return
+  const completed = (event.target as HTMLInputElement).checked
+  checklistSaving.value = item.itemKey
+  actionError.value = ''
+  try {
+    const response = await apiPatch<{ progress: DealChecklistProgress }>(
+      `/deals/${deal.value.id}/checklist/${item.itemKey}`,
+      { completed }
+    )
+    checklist.value = response.data.progress
+  } catch (error) {
+    actionError.value = errorMessage(error)
+  } finally {
+    checklistSaving.value = null
+  }
+}
+
 function onPrint(): void {
   window.print()
 }
@@ -420,6 +512,7 @@ async function load(): Promise<void> {
     leaseForm.leaseStartAt = response.data.leaseStartAt ? String(response.data.leaseStartAt).slice(0, 10) : ''
     leaseForm.leaseEndAt = response.data.leaseEndAt ? String(response.data.leaseEndAt).slice(0, 10) : ''
     leaseForm.renewalNoticeDays = String(response.data.renewalNoticeDays ?? 30)
+    await loadChecklist(id)
     if (canViewFinance.value) {
       const summaryResponse = await apiGet<PaymentSummary>('/finance/payments/summary', { params: { dealId: id } })
       summary.value = summaryResponse.data
@@ -521,7 +614,11 @@ async function onStatusChange(event: Event): Promise<void> {
   if (!deal.value) return
   const status = (event.target as HTMLSelectElement).value
   try {
-    await apiPatch(`/deals/${deal.value.id}`, { status })
+    const payload: Record<string, unknown> = { status }
+    if (status === 'COMPLETED' && checklist.value && !checklist.value.isComplete && overrideReason.value.trim()) {
+      payload.checklistOverrideReason = overrideReason.value.trim()
+    }
+    await apiPatch(`/deals/${deal.value.id}`, payload)
     await load()
   } catch (error) {
     actionError.value = errorMessage(error)
@@ -541,6 +638,7 @@ async function recordPayment(): Promise<void> {
       status: paymentForm.status,
       method: paymentForm.method || undefined,
       reference: paymentForm.reference || undefined,
+      dueAt: paymentForm.dueAt || undefined,
       paidAt: paymentForm.paidAt || undefined
     })
     paymentForm.amount = ''
@@ -674,6 +772,16 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .installment-warning { background: #fffbeb; color: #92400e; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
 .notice { background: #ecfdf5; color: #166534; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
+.check-item { display: flex; flex-direction: row; align-items: center; gap: 0.6rem; flex: 1; font-size: 0.88rem; color: #374151; }
+.check-item input { width: 1rem; height: 1rem; }
+.checklist-override { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid #f3f4f6; }
+.checklist-override label { max-width: 520px; }
+.hint { font-size: 0.76rem; color: #6b7280; margin: 0.45rem 0 0; }
+.aging-pill { font-size: 0.7rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: #f3f4f6; color: #4b5563; white-space: nowrap; }
+.aging-1_30_DAYS { background: #fef3c7; color: #92400e; }
+.aging-31_60_DAYS { background: #ffedd5; color: #9a3412; }
+.aging-60_PLUS_DAYS { background: #fee2e2; color: #991b1b; }
+.aging-PAID { background: #dcfce7; color: #166534; }
 .table-wrap { max-height: 260px; overflow: auto; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 0.8rem; }
 .table-wrap th { position: sticky; top: 0; background: #f9fafb; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }

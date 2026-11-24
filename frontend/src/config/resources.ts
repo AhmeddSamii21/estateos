@@ -153,6 +153,7 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'method', label: 'Method', type: 'text' },
       { key: 'reference', label: 'Reference', type: 'text' },
       { key: 'idempotencyKey', label: 'Idempotency key', type: 'text' },
+      { key: 'dueAt', label: 'Due date', type: 'date' },
       { key: 'paidAt', label: 'Paid at', type: 'date' },
       { key: 'notes', label: 'Notes', type: 'textarea' }
     ],
@@ -161,7 +162,9 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'amount', label: 'Amount', money: true },
       { key: 'baseAmount', label: 'Base amount', money: true },
       { key: 'status', label: 'Status' },
+      { key: 'aging', label: 'Aging' },
       { key: 'method', label: 'Method' },
+      { key: 'dueAt', label: 'Due', date: true },
       { key: 'paidAt', label: 'Paid', date: true }
     ],
     deletable: false
