@@ -683,4 +683,9 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
   .btn, input, select { min-height: 44px; }
   .hero-actions, .panel-head { align-items: flex-start; flex-wrap: wrap; }
 }
+@media (max-width: 768px) {
+  .table-wrap { overflow-x: auto; }
+  .btn { min-height: 44px; }
+  .panel, .card { padding-inline: 0.75rem; }
+}
 </style>

@@ -10,6 +10,21 @@
       </router-link>
     </div>
 
+    <div class="range-pills" role="group" :aria-label="store.isArabic ? 'نطاق التاريخ' : 'Date range'">
+      <button type="button" class="range-pill" data-range="7d" :class="{ active: range === '7d' }" :aria-pressed="range === '7d'" @click="range = '7d'">
+        {{ store.isArabic ? 'آخر 7 أيام' : 'Last 7 days' }}
+      </button>
+      <button type="button" class="range-pill" data-range="30d" :class="{ active: range === '30d' }" :aria-pressed="range === '30d'" @click="range = '30d'">
+        {{ store.isArabic ? 'آخر 30 يوم' : 'Last 30 days' }}
+      </button>
+      <button type="button" class="range-pill" data-range="90d" :class="{ active: range === '90d' }" :aria-pressed="range === '90d'" @click="range = '90d'">
+        {{ store.isArabic ? 'آخر 90 يوم' : 'Last 90 days' }}
+      </button>
+      <button type="button" class="range-pill" data-range="all" :class="{ active: range === 'all' }" :aria-pressed="range === 'all'" @click="range = 'all'">
+        {{ store.isArabic ? 'الكل' : 'All time' }}
+      </button>
+    </div>
+
     <div v-if="store.loading && !store.allProperties.length" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
 
     <template v-else>
@@ -104,9 +119,25 @@ interface CurrencyTotal {
   count: number
 }
 
+type DashboardRange = '7d' | '30d' | '90d' | 'all'
+
 const store = useStore()
 const fxOverview = ref<ExchangeRateOverview | null>(null)
 const leaseRenewals = ref<LeaseRenewal[]>([])
+const range = ref<DashboardRange>('all')
+
+const rangeCutoff = computed(() => {
+  if (range.value === 'all') return null
+  const cutoff = new Date()
+  cutoff.setUTCDate(cutoff.getUTCDate() - Number(range.value.slice(0, -1)))
+  return cutoff
+})
+
+const scopedProperties = computed(() => {
+  const cutoff = rangeCutoff.value
+  if (!cutoff) return store.allProperties
+  return store.allProperties.filter((property) => new Date(property.createdAt).getTime() >= cutoff.getTime())
+})
 
 onMounted(async () => {
   if (!store.allProperties.length) void store.fetchProperties({ limit: 100 })
@@ -126,9 +157,9 @@ onMounted(async () => {
   }
 })
 
-const recent = computed(() => store.allProperties.slice(0, 6))
-const available = computed(() => store.allProperties.filter((p) => p.status === 'AVAILABLE'))
-const sold = computed(() => store.allProperties.filter((p) => p.status === 'SOLD'))
+const recent = computed(() => scopedProperties.value.slice(0, 6))
+const available = computed(() => scopedProperties.value.filter((p) => p.status === 'AVAILABLE'))
+const sold = computed(() => scopedProperties.value.filter((p) => p.status === 'SOLD'))
 
 function normalizeCurrency(currency: string | null | undefined): string {
   return currency?.trim().toUpperCase() || 'UNSPECIFIED'
@@ -146,7 +177,7 @@ function groupByCurrency(properties: Property[]): CurrencyTotal[] {
   return Array.from(grouped.values()).sort((a, b) => a.currency.localeCompare(b.currency))
 }
 
-const portfolioByCurrency = computed(() => groupByCurrency(store.allProperties))
+const portfolioByCurrency = computed(() => groupByCurrency(scopedProperties.value))
 const soldByCurrency = computed(() => groupByCurrency(sold.value))
 
 const baseTotals = computed(() => {
@@ -227,7 +258,7 @@ function breakdown(rows: CurrencyTotal[]): string {
 }
 
 const cards = computed(() => [
-  { label: store.isArabic ? 'إجمالي العقارات' : 'Total properties', value: store.allProperties.length, hint: store.isArabic ? 'في قاعدة البيانات' : 'in the database', money: false },
+  { label: store.isArabic ? 'إجمالي العقارات' : 'Total properties', value: scopedProperties.value.length, hint: store.isArabic ? 'في النطاق المحدد' : 'in the selected range', money: false },
   { label: store.isArabic ? 'متاحة' : 'Available', value: available.value.length, hint: store.isArabic ? 'جاهزة للعرض' : 'ready for viewing', money: false },
   { label: store.isArabic ? 'مباعة' : 'Sold', value: sold.value.length, hint: store.isArabic ? 'صفقات مكتملة' : 'closed deals', money: false },
   {
@@ -277,5 +308,17 @@ h2 { margin: 0; font-size: 1.05rem; }
 .state { padding: 2rem; text-align: center; color: #6b7280; font-size: 0.9rem; }
 .shortcuts { display: flex; gap: 0.8rem; flex-wrap: wrap; }
 .shortcuts a { display: inline-flex; align-items: center; gap: 0.5rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0.8rem 1rem; color: #374151; text-decoration: none; font-size: 0.86rem; }
+.range-pills { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.range-pill { min-height: 44px; padding: 0.5rem 1rem; border: 1px solid #e5e7eb; border-radius: 999px; background: #fff; color: #374151; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+.range-pill.active { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+@media (max-width: 768px) {
+  .page-head { align-items: flex-start; }
+  .range-pills { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 0.35rem; }
+  .range-pill { flex: 0 0 auto; min-height: 44px; }
+  .panel { overflow-x: auto; }
+  .rows { min-width: 0; }
+  .row { min-width: 420px; }
+  .btn, .shortcuts a { min-height: 44px; }
+}
 @media (max-width: 600px) { .row { grid-template-columns: 1fr auto; } .ref, .tag { display: none; } }
 </style>

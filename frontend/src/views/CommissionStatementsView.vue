@@ -303,4 +303,9 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
   .btn, input, select { min-height: 44px; }
   th, td { white-space: nowrap; }
 }
+@media (max-width: 768px) {
+  .panel { overflow-x: auto; padding-inline: 0.75rem; }
+  .panel table { min-width: 640px; }
+  .btn, .date-form input, .date-form select { min-height: 44px; }
+}
 </style>

@@ -466,6 +466,12 @@ input, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem
 .inline-error { margin: 1rem 1.2rem; }
 .prop-list li { display: flex; justify-content: space-between; gap: 0.75rem; }
 @media (max-width: 768px) {
+  .table-wrap { overflow-x: auto; }
+  .btn, .modal-actions button, .search input { min-height: 44px; }
+  .modal { width: 100%; border-radius: 10px; }
+  .modal-head, .modal-body, .modal-actions { padding-inline: 0.75rem; }
+}
+@media (max-width: 768px) {
   .modal { padding: 0.5rem; }
   .table-wrap, .statement-table { overflow-x: auto; }
   .btn, .link, input, textarea { min-height: 44px; }

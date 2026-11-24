@@ -508,5 +508,11 @@ h1 { margin: 0; font-size: 1.5rem; }
 .bulk-results { margin: 0; padding-inline-start: 1.1rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; max-height: 180px; overflow: auto; }
 .bulk-results li.ok { color: #166534; }
 .bulk-results li.fail { color: #991b1b; }
+@media (max-width: 768px) {
+  .board-wrap { overflow-x: auto; }
+  .board { overflow-x: auto; }
+  .btn, .view-toggle button, .board-move { min-height: 44px; }
+  .filters, .bulk-row { padding-inline: 0.75rem; }
+}
 @media (max-width: 640px) { .bulk-row { flex-direction: column; align-items: stretch; } .bulk-row .btn { justify-content: center; } }
 </style>

@@ -11,6 +11,7 @@ import {
 } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
+import { createError } from '../middleware/errorHandler'
 import { REPORT_ROLES, leadScope, organizationIdOf } from '../utils/scope'
 import { dateValue } from '../utils/validation'
 import { sumMoney } from '../utils/money'
@@ -25,9 +26,26 @@ interface DateRange {
   createdAt?: { gte?: Date; lte?: Date }
 }
 
-function dateRange(query: Record<string, unknown>): DateRange {
-  const from = dateValue(query.from, 'from')
+const RANGE_PRESETS: Record<string, number | null> = {
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+  all: null
+}
+
+export function dateRange(query: Record<string, unknown>): DateRange {
+  let from = dateValue(query.from, 'from')
   const to = dateValue(query.to, 'to')
+  if (query.range !== undefined) {
+    const preset = String(query.range).toLowerCase()
+    if (!(preset in RANGE_PRESETS)) throw createError('Invalid range; use 7d, 30d, 90d or all', 400)
+    const days = RANGE_PRESETS[preset]
+    if (days !== null && !from) {
+      const start = new Date()
+      start.setUTCDate(start.getUTCDate() - days)
+      from = start
+    }
+  }
   if (!from && !to) return {}
   return { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
 }
