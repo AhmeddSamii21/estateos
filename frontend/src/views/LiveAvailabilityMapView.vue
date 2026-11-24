@@ -31,7 +31,7 @@
         <span>{{ store.isArabic ? 'الحالة' : 'Status' }}</span>
         <select v-model="filters.status" @change="load">
           <option value="">{{ store.isArabic ? 'كل الحالات' : 'All statuses' }}</option>
-          <option v-for="legend in result?.legend || mapLegend" :key="legend.key" :value="legend.key">{{ legend.label }}</option>
+          <option v-for="item in legend" :key="item.key" :value="item.key">{{ item.label }}</option>
         </select>
       </label>
       <label>
@@ -53,13 +53,13 @@
     </form>
 
     <section class="counters" :aria-label="store.isArabic ? 'ملخص التوفر' : 'Availability summary'">
-      <div class="counter">
+      <div class="counter counter-total">
         <span>{{ store.isArabic ? 'إجمالي الوحدات' : 'Total units' }}</span>
         <strong>{{ result?.totals.units ?? 0 }}</strong>
       </div>
-      <div v-for="legend in result?.legend || mapLegend" :key="legend.key" class="counter" :class="`counter-${legend.key.toLowerCase()}`">
-        <span><i :style="{ background: legend.color }"></i>{{ legend.label }}</span>
-        <strong>{{ result?.counts[legend.key] ?? 0 }}</strong>
+      <div v-for="item in legend" :key="item.key" class="counter" :class="`counter-${item.key.toLowerCase()}`">
+        <span><i :style="{ background: item.color }"></i>{{ item.label }}</span>
+        <strong>{{ result?.counts[item.key] ?? 0 }}</strong>
       </div>
       <div class="counter">
         <span>{{ store.isArabic ? 'المشاريع' : 'Projects' }}</span>
@@ -97,7 +97,7 @@
         <div v-show="mapMode === 'geo'" class="geo-wrap">
           <div ref="mapElement" class="geo-map" :aria-label="store.isArabic ? 'خريطة الوحدات' : 'Units map'"></div>
           <p class="hint">
-            {{ store.isArabic ? 'اضغط على أي مؤشر لعرض تفاصيل الوحدة. الخريطة تعمل بأمان مع مزودي البلاط العام.' : 'Select a pin to inspect the unit. Map tiles come from OpenStreetMap.' }}
+            {{ store.isArabic ? 'اضغط على أي مؤشر لفحص الوحدة. البلاط من CARTO وOpenStreetMap، ويتم تقريب الخريطة تلقائيًا حول الوحدات الظاهرة.' : 'Select a pin to inspect the unit. Tiles by CARTO / OpenStreetMap; the map auto-fits the visible units.' }}
           </p>
         </div>
 
@@ -201,75 +201,102 @@
 
     <div v-if="selected" class="drawer-backdrop no-print" @click.self="closeDrawer">
       <aside class="drawer" :dir="store.direction" role="dialog" aria-modal="true" :aria-label="selected.label">
-        <button class="drawer-close" type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeDrawer">×</button>
-        <h2>{{ selected.label }}</h2>
-        <p class="muted">{{ selected.title }}</p>
-        <dl>
-          <dt>{{ store.isArabic ? 'المشروع' : 'Project' }}</dt>
-          <dd>{{ selected.project }}</dd>
-          <dt>{{ store.isArabic ? 'المبنى' : 'Building' }}</dt>
-          <dd>{{ selected.building }}</dd>
-          <dt>{{ store.isArabic ? 'الحالة' : 'Status' }}</dt>
-          <dd><span class="status-pill" :style="{ background: selected.color }">{{ rawStatusLabel(selected.rawStatus) }}</span></dd>
-          <dt>{{ store.isArabic ? 'السعر' : 'Price' }}</dt>
-          <dd><strong>{{ formatMoney(selected.price, selected.currency) }}</strong></dd>
-          <dt>{{ store.isArabic ? 'المساحة' : 'Area' }}</dt>
-          <dd>{{ selected.area }} {{ store.isArabic ? 'م²' : 'm²' }}</dd>
-          <dt>{{ store.isArabic ? 'الدور' : 'Floor' }}</dt>
-          <dd>{{ floorLabel(selected.floor) }}</dd>
-          <dt>{{ store.isArabic ? 'النوع' : 'Type' }}</dt>
-          <dd>{{ selected.type }}</dd>
-          <dt>{{ store.isArabic ? 'غرف النوم' : 'Bedrooms' }}</dt>
-          <dd>{{ selected.bedrooms }}</dd>
-        </dl>
+        <header class="drawer-header">
+          <div class="drawer-heading">
+            <span class="drawer-eyebrow">{{ store.isArabic ? 'فحص الوحدة' : 'Unit inspection' }}</span>
+            <h2>{{ selected.label }}</h2>
+            <p class="muted">{{ selected.title }}</p>
+          </div>
+          <span class="status-pill drawer-status" :style="{ background: selected.color }">
+            {{ mapStatusLabel(selected.status, store.isArabic ? 'ar' : 'en') }}
+          </span>
+          <button class="drawer-close" type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeDrawer">×</button>
+        </header>
 
-        <section v-if="canUpdateStatus" class="drawer-section">
-          <h3>{{ store.isArabic ? 'تحديث سريع للحالة' : 'Quick status update' }}</h3>
-          <div class="status-actions">
-            <button
-              v-for="status in quickStatuses"
-              :key="status"
-              class="btn btn-quiet"
-              type="button"
-              :disabled="saving"
-              @click="setStatus(status)"
-            >
-              {{ mapStatusLabel(status, store.isArabic ? 'ar' : 'en') }}
+        <div class="drawer-body">
+          <dl class="spec-grid">
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'المشروع' : 'Project' }}</dt>
+              <dd>{{ selected.project }}</dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'المبنى' : 'Building' }}</dt>
+              <dd>{{ selected.building }}</dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'الحالة' : 'Status' }}</dt>
+              <dd><span class="status-pill" :style="{ background: selected.color }">{{ mapStatusLabel(selected.status, store.isArabic ? 'ar' : 'en') }}</span></dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'السعر' : 'Price' }}</dt>
+              <dd><strong>{{ formatMoney(selected.price, selected.currency) }}</strong></dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'المساحة' : 'Area' }}</dt>
+              <dd>{{ selected.area }} {{ store.isArabic ? 'م²' : 'm²' }}</dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'الدور' : 'Floor' }}</dt>
+              <dd>{{ floorLabel(selected.floor) }}</dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'النوع' : 'Type' }}</dt>
+              <dd>{{ selected.type }}</dd>
+            </div>
+            <div class="spec">
+              <dt>{{ store.isArabic ? 'غرف النوم' : 'Bedrooms' }}</dt>
+              <dd>{{ selected.bedrooms }}</dd>
+            </div>
+          </dl>
+
+          <section v-if="canUpdateStatus" class="drawer-section">
+            <h3>{{ store.isArabic ? 'تحديث سريع للحالة' : 'Quick status update' }}</h3>
+            <div class="status-actions">
+              <button
+                v-for="status in quickStatuses"
+                :key="status"
+                class="btn btn-quiet"
+                type="button"
+                :disabled="saving"
+                @click="setStatus(status)"
+              >
+                {{ mapStatusLabel(status, store.isArabic ? 'ar' : 'en') }}
+              </button>
+            </div>
+            <p v-if="!quickStatuses.length" class="muted small">
+              {{ store.isArabic ? 'لا يمكن تغيير حالة هذه الوحدة.' : 'This unit status cannot be changed further.' }}
+            </p>
+          </section>
+
+          <section v-if="canCoordinate" class="drawer-section">
+            <h3>{{ store.isArabic ? 'موقع المؤشر' : 'Pin position' }}</h3>
+            <div class="coordinate-grid">
+              <label>
+                <span>X %</span>
+                <input v-model.number="coordinates.mapX" type="number" min="0" max="100" step="0.1" />
+              </label>
+              <label>
+                <span>Y %</span>
+                <input v-model.number="coordinates.mapY" type="number" min="0" max="100" step="0.1" />
+              </label>
+            </div>
+            <button class="btn btn-quiet" type="button" :disabled="saving" @click="saveCoordinates">
+              {{ saving ? '…' : (store.isArabic ? 'حفظ الموقع' : 'Save position') }}
             </button>
-          </div>
-          <p v-if="!quickStatuses.length" class="muted small">
-            {{ store.isArabic ? 'لا يمكن تغيير حالة هذه الوحدة.' : 'This unit status cannot be changed further.' }}
-          </p>
-        </section>
+          </section>
+        </div>
 
-        <section v-if="canCoordinate" class="drawer-section">
-          <h3>{{ store.isArabic ? 'موقع المؤشر' : 'Pin position' }}</h3>
-          <div class="coordinate-grid">
-            <label>
-              <span>X %</span>
-              <input v-model.number="coordinates.mapX" type="number" min="0" max="100" step="0.1" />
-            </label>
-            <label>
-              <span>Y %</span>
-              <input v-model.number="coordinates.mapY" type="number" min="0" max="100" step="0.1" />
-            </label>
-          </div>
-          <button class="btn btn-quiet" type="button" :disabled="saving" @click="saveCoordinates">
-            {{ saving ? '…' : (store.isArabic ? 'حفظ الموقع' : 'Save position') }}
-          </button>
-        </section>
-
-        <div class="drawer-links">
-          <button class="btn btn-primary" type="button" @click="openSimulator">
+        <footer class="drawer-footer">
+          <router-link class="btn btn-primary" :to="`/properties/${selected.id}`">
+            {{ store.isArabic ? 'تفاصيل العقار' : 'Property details' }}
+          </router-link>
+          <button class="btn btn-quiet" type="button" @click="openSimulator">
             <i class="fas fa-calculator"></i> {{ store.isArabic ? 'محاكاة الأقساط' : 'Installment simulator' }}
           </button>
           <button class="btn btn-quiet" type="button" @click="addToComparison">
-            <i class="fas fa-code-compare"></i> {{ store.isArabic ? 'أضف للمقارنة' : 'Add to comparison' }}
+            <i class="fas fa-code-compare"></i> {{ store.isArabic ? 'أضف للمقارنة' : 'Compare' }}
           </button>
-          <router-link class="btn btn-quiet" :to="`/properties/${selected.id}`">
-            {{ store.isArabic ? 'تفاصيل العقار' : 'Property details' }}
-          </router-link>
-        </div>
+        </footer>
       </aside>
     </div>
   </div>
@@ -283,6 +310,7 @@ import 'leaflet/dist/leaflet.css'
 import { apiGet, apiPatch, errorMessage } from '@/api/client'
 import { useStore } from '@/stores'
 import {
+  MAP_STATUSES,
   MAP_STATUS_META,
   masterplanDataUrl,
   mapStatusLabel,
@@ -310,11 +338,13 @@ const fallbackImage = ref(false)
 const coordinates = ref({ mapX: 0, mapY: 0 })
 const mapElement = ref<HTMLDivElement | null>(null)
 
-const mapLegend = [
-  { key: 'AVAILABLE', label: store.isArabic ? 'متاح' : 'Available', color: MAP_STATUS_META.AVAILABLE.color },
-  { key: 'RESERVED', label: store.isArabic ? 'محجوز' : 'Reserved', color: MAP_STATUS_META.RESERVED.color },
-  { key: 'SOLD', label: store.isArabic ? 'مباع' : 'Sold', color: MAP_STATUS_META.SOLD.color }
-]
+const legend = computed(() => result.value?.legend?.length
+  ? result.value.legend
+  : MAP_STATUSES.map((key) => ({
+      key,
+      label: mapStatusLabel(key, store.isArabic ? 'ar' : 'en'),
+      color: MAP_STATUS_META[key].color
+    })))
 
 const canManage = computed(() => store.user?.role === 'ADMIN' || store.user?.role === 'MANAGER')
 const canCoordinate = computed(() => canManage.value || store.user?.role === 'TEAM_LEAD')
@@ -347,7 +377,7 @@ const gridGroups = computed<GridGroup[]>(() => {
 })
 
 const TRANSITIONS: Record<string, string[]> = {
-  AVAILABLE: ['RESERVED', 'SOLD'],
+  AVAILABLE: ['RESERVED', 'SOLD', 'OFF_MARKET'],
   PENDING: ['AVAILABLE', 'RESERVED', 'SOLD'],
   UNDER_NEGOTIATION: ['AVAILABLE', 'RESERVED', 'SOLD'],
   RESERVED: ['AVAILABLE', 'SOLD'],
@@ -357,17 +387,6 @@ const TRANSITIONS: Record<string, string[]> = {
   SOLD: []
 }
 const quickStatuses = computed(() => TRANSITIONS[selected.value?.rawStatus || ''] || [])
-
-const RAW_STATUS_LABELS: Record<string, { en: string; ar: string }> = {
-  AVAILABLE: { en: 'Available', ar: 'متاح' },
-  PENDING: { en: 'Pending', ar: 'قيد الانتظار' },
-  UNDER_NEGOTIATION: { en: 'Under negotiation', ar: 'قيد التفاوض' },
-  RESERVED: { en: 'Reserved', ar: 'محجوز' },
-  SOLD: { en: 'Sold', ar: 'مباع' },
-  RENTED: { en: 'Rented', ar: 'مؤجر' },
-  OFF_MARKET: { en: 'Off market', ar: 'خارج السوق' },
-  UNAVAILABLE: { en: 'Unavailable', ar: 'غير متاح' }
-}
 
 let map: L.Map | null = null
 let markers: L.LayerGroup | null = null
@@ -394,11 +413,6 @@ function formatMoney(value: number, currency: string): string {
 function floorLabel(floor: number): string {
   if (store.isArabic) return floor === 0 ? 'الأرضي' : `الدور ${floor}`
   return floor === 0 ? 'Ground floor' : `Floor ${floor}`
-}
-
-function rawStatusLabel(status: string): string {
-  const meta = RAW_STATUS_LABELS[status]
-  return meta ? meta[store.isArabic ? 'ar' : 'en'] : status || '—'
 }
 
 function pinTooltip(unit: MapPin): string {
@@ -451,9 +465,11 @@ function switchMapMode(mode: MapMode): void {
 function setupMap(): void {
   if (map || !mapElement.value) return
   map = L.map(mapElement.value, { center: [26.5, 31.2], zoom: 6, zoomControl: true })
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 18
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 20,
+    detectRetina: true
   }).addTo(map)
   markers = L.layerGroup().addTo(map)
   renderMarkers()
@@ -479,13 +495,17 @@ function renderMarkers(): void {
     marker.bindPopup(popup)
     marker.on('popupopen', () => {
       const element = marker.getPopup()?.getElement()
-      element?.querySelector('.map-popup-inspect')?.addEventListener('click', () => openUnit(unit))
+      element?.querySelector('.map-popup-inspect')?.addEventListener('click', (event) => {
+        event.preventDefault()
+        if (map) map.closePopup()
+        openUnit(unit)
+      })
     })
     markersById.set(unit.id, marker)
   }
   highlightSelected()
   if (fitOnNextRender && bounds.length) {
-    map.fitBounds(L.latLngBounds(bounds).pad(0.18))
+    map.fitBounds(L.latLngBounds(bounds), { padding: [48, 48], maxZoom: 13 })
     fitOnNextRender = false
   }
 }
@@ -598,28 +618,61 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.page { display: grid; gap: 1rem; }
-.page-head { display: flex; flex-wrap: wrap; gap: 1rem; align-items: start; justify-content: space-between; }
-.page-head h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
-.head-actions, .view-switch, .map-switch, .status-actions, .drawer-links { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; align-items: end; }
-.filters label { display: grid; gap: 0.25rem; font-size: 0.82rem; }
-.filters input, .filters select, .coordinate-grid input { width: 100%; padding: 0.5rem; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); color: inherit; }
-.counters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
-.counter { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 1rem; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; background: var(--surface, #fff); }
-.counter span { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--muted, #64748b); }
-.counter i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.counter strong { font-size: 1.35rem; }
-.view-switch button, .map-switch button { padding: 0.5rem 0.9rem; border: 1px solid var(--border, #e2e8f0); border-radius: 999px; background: var(--surface, #fff); cursor: pointer; }
-.view-switch button.active, .map-switch button.active { background: var(--primary, #0f766e); border-color: var(--primary, #0f766e); color: #fff; }
-.geo-wrap { display: grid; gap: 0.4rem; }
-.geo-map { height: min(62vh, 560px); min-height: 340px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border, #e2e8f0); background-color: #e8f1e9; background-image: linear-gradient(#d6e6d8 1px, transparent 1px), linear-gradient(90deg, #d6e6d8 1px, transparent 1px); background-size: 32px 32px; }
-.hint { margin: 0; font-size: 0.78rem; color: var(--muted, #64748b); }
+.page { display: grid; gap: 0.9rem; }
+.page-head { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; justify-content: space-between; }
+.page-head h1 { margin: 0 0 0.3rem; font-size: 1.4rem; letter-spacing: -0.02em; }
+.page-head p { margin: 0; max-width: 72ch; font-size: 0.85rem; line-height: 1.5; }
+.head-actions, .status-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.muted { color: var(--muted, #64748b); }
+.small { font-size: 0.78rem; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; border: 1px solid transparent; border-radius: 0.65rem; padding: 0.55rem 0.85rem; font-size: 0.83rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease; }
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: #0f766e; color: #fff; box-shadow: 0 8px 18px -12px rgba(15, 118, 110, 0.95); }
+.btn-primary:hover { background: #115e59; }
+.btn-quiet { background: #f8fafc; border-color: #e2e8f0; color: #334155; }
+.btn-quiet:hover { background: #f1f5f9; }
+
+.panel { background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0); border-radius: 1rem; }
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 0.75rem; align-items: end; padding: 0.9rem 1rem; box-shadow: 0 14px 30px -26px rgba(15, 23, 42, 0.7); }
+.filters label { display: grid; gap: 0.3rem; font-size: 0.78rem; font-weight: 600; color: #475569; }
+.filters input, .filters select, .coordinate-grid input { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.6rem; background: #fff; color: inherit; font: inherit; }
+.filters input:focus, .filters select:focus, .coordinate-grid input:focus { outline: 2px solid rgba(15, 118, 110, 0.25); border-color: #0f766e; }
+
+.counters { display: flex; gap: 0.55rem; align-items: stretch; overflow-x: auto; padding: 0.15rem 0.05rem 0.35rem; scrollbar-width: thin; }
+.counter { flex: 0 0 auto; min-width: 118px; display: flex; flex-direction: column; gap: 0.2rem; padding: 0.6rem 0.85rem; border: 1px solid var(--border, #e2e8f0); border-radius: 0.85rem; background: var(--surface, #fff); box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.7); }
+.counter-total { background: #f8fafc; }
+.counter span { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; color: var(--muted, #64748b); white-space: nowrap; }
+.counter i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.counter strong { font-size: 1.2rem; line-height: 1.1; }
+
+.alert { padding: 0.7rem 0.9rem; border-radius: 0.75rem; font-size: 0.85rem; }
+.alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.notice { padding: 0.7rem 0.9rem; border-radius: 0.75rem; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 0.85rem; }
+.state { padding: 2rem; border-radius: 1rem; background: #fff; border: 1px solid var(--border, #e2e8f0); text-align: center; color: var(--muted, #64748b); }
+
+.view-switch, .map-switch { display: inline-flex; gap: 0.25rem; width: max-content; max-width: 100%; padding: 0.25rem; border: 1px solid #e2e8f0; border-radius: 999px; background: #f1f5f9; }
+.view-switch button, .map-switch button { border: 0; border-radius: 999px; padding: 0.45rem 0.9rem; background: transparent; color: #475569; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease; }
+.view-switch button.active, .map-switch button.active { background: #fff; color: #0f766e; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1); }
+
+/* Leaflet panes use z-index 400-1000; isolate them so they can never cover the drawer. */
+.geo-wrap { position: relative; isolation: isolate; z-index: 1; display: grid; gap: 0.4rem; }
+.geo-map { height: min(62vh, 560px); min-height: 340px; border-radius: 1rem; overflow: hidden; border: 1px solid #e2e8f0; background: #e8f1e9; box-shadow: 0 18px 40px -28px rgba(15, 23, 42, 0.65); }
+:deep(.leaflet-container) { font-family: inherit; border-radius: inherit; }
+:deep(.leaflet-control-attribution) { font-size: 0.65rem; background: rgba(255, 255, 255, 0.82); }
+:deep(.leaflet-popup-content-wrapper) { border-radius: 0.75rem; padding: 0.15rem; box-shadow: 0 14px 36px -14px rgba(15, 23, 42, 0.45); }
+:deep(.leaflet-popup-content) { margin: 0.6rem 0.8rem; font-size: 0.82rem; line-height: 1.5; }
+:deep(.map-popup strong) { font-size: 0.9rem; }
+:deep(.map-popup-inspect) { margin-top: 0.55rem; border: 0; border-radius: 0.5rem; padding: 0.35rem 0.7rem; background: #0f766e; color: #fff; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+:deep(.map-popup-inspect:hover) { background: #115e59; }
+.hint { margin: 0; font-size: 0.76rem; color: var(--muted, #64748b); }
+
 .masterplan-panel { display: grid; gap: 0.75rem; }
 .masterplan-head { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; }
-.masterplan-head label { display: grid; gap: 0.25rem; font-size: 0.82rem; }
-.masterplan-head select { padding: 0.5rem; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); color: inherit; }
-.masterplan { position: relative; width: 100%; aspect-ratio: 10 / 7; border: 1px solid var(--border, #e2e8f0); border-radius: 12px; overflow: hidden; background: #eef2ff; }
+.masterplan-head label { display: grid; gap: 0.3rem; font-size: 0.78rem; font-weight: 600; color: #475569; }
+.masterplan-head select { padding: 0.5rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 0.6rem; background: #fff; color: inherit; }
+.masterplan { position: relative; width: 100%; aspect-ratio: 10 / 7; border: 1px solid #e2e8f0; border-radius: 1rem; overflow: hidden; background: #eef2ff; box-shadow: 0 18px 40px -28px rgba(15, 23, 42, 0.55); }
 .masterplan img { width: 100%; height: 100%; object-fit: fill; display: block; }
 .pin { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.45rem; border: 2px solid #fff; border-radius: 999px; color: #fff; font-size: 0.72rem; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.3); }
 .pin.selected { outline: 3px solid #0f172a; z-index: 3; }
@@ -634,40 +687,61 @@ onBeforeUnmount(() => {
 .stack-row { display: grid; grid-template-columns: 110px 1fr; gap: 0.75rem; padding-top: 0.6rem; }
 .stack-floor { font-size: 0.82rem; color: var(--muted, #64748b); }
 .stack-units { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.stack-cell { display: grid; gap: 0.15rem; min-width: 92px; padding: 0.45rem 0.6rem; border: 1px solid var(--pin-color); border-inline-start-width: 5px; border-radius: 8px; background: var(--surface, #fff); text-align: start; cursor: pointer; }
+.stack-cell { display: grid; gap: 0.15rem; min-width: 92px; padding: 0.45rem 0.6rem; border: 1px solid var(--pin-color); border-inline-start-width: 5px; border-radius: 0.6rem; background: #fff; text-align: start; cursor: pointer; }
 .stack-cell small { color: var(--muted, #64748b); font-size: 0.72rem; }
 .list-wrap { padding: 0; overflow: hidden; }
 .table-scroll { overflow-x: auto; }
 .unit-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.unit-table th, .unit-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border, #eef2f7); text-align: start; vertical-align: middle; }
+.unit-table th, .unit-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #eef2f7; text-align: start; vertical-align: middle; }
 .unit-table th { background: rgba(15, 118, 110, 0.06); font-size: 0.78rem; }
 .unit-table small { display: block; font-size: 0.72rem; }
-.status-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; color: #fff; font-size: 0.75rem; font-weight: 600; }
-.drawer-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(15, 23, 42, 0.42); }
-.drawer { position: relative; width: min(440px, 100%); height: 100%; padding: 1.5rem; overflow: auto; background: var(--surface, #fff); box-shadow: -8px 0 24px rgba(15, 23, 42, 0.15); }
-.drawer-close { float: inline-end; border: 0; background: none; font-size: 1.5rem; cursor: pointer; }
-.drawer h2 { margin: 0; font-size: 1.3rem; }
-.drawer dl { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin: 1rem 0; }
-.drawer dt { font-size: 0.78rem; color: var(--muted, #64748b); }
-.drawer dd { margin: 0; font-weight: 600; }
-.drawer-section { padding: 0.8rem 0; border-top: 1px solid var(--border, #eef2f7); }
-.drawer-section h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
-.coordinate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; }
-.coordinate-grid label { display: grid; gap: 0.25rem; font-size: 0.78rem; }
-.drawer-links { flex-direction: column; align-items: stretch; margin-top: 0.8rem; }
-.drawer-links .btn { text-align: center; }
+.status-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; color: #fff; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+
+/* Full-height flex drawer: sticky header, scrolling body, sticky footer. */
+.drawer-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; align-items: stretch; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
+.drawer { position: fixed; inset-block: 0; inset-inline-end: 0; z-index: 50; width: 100%; max-width: 28rem; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: #fff; box-shadow: -18px 0 50px -20px rgba(15, 23, 42, 0.5); }
+.drawer-header { position: sticky; top: 0; z-index: 1; flex-shrink: 0; display: flex; align-items: flex-start; gap: 0.75rem; padding: 1.2rem 1.5rem; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.drawer-heading { flex: 1 1 auto; min-width: 0; }
+.drawer-eyebrow { display: block; margin-bottom: 0.25rem; color: #64748b; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.drawer-heading h2 { margin: 0; font-size: 1.35rem; line-height: 1.2; overflow-wrap: anywhere; }
+.drawer-heading p { margin: 0.25rem 0 0; font-size: 0.8rem; }
+.drawer-status { flex: 0 0 auto; margin-top: 0.15rem; }
+.drawer-close { flex: 0 0 auto; width: 2rem; height: 2rem; border: 0; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.drawer-close:hover { background: #e2e8f0; }
+.drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 1.25rem; align-content: start; padding: 1.5rem; }
+.spec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; margin: 0; }
+.spec { min-width: 0; padding: 0.7rem 0.8rem; border: 1px solid #eef2f7; border-radius: 0.75rem; background: #f8fafc; }
+.spec dt { margin-bottom: 0.25rem; color: #64748b; font-size: 0.7rem; }
+.spec dd { margin: 0; font-size: 0.86rem; font-weight: 600; overflow-wrap: anywhere; }
+.drawer-section { padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+.drawer-section h3 { margin: 0 0 0.6rem; font-size: 0.92rem; }
+.coordinate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem; }
+.coordinate-grid label { display: grid; gap: 0.25rem; font-size: 0.76rem; color: #475569; }
+.drawer-footer { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+.drawer-footer .btn { width: 100%; text-align: center; }
+.drawer-footer .btn-primary { grid-column: 1 / -1; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 @media (max-width: 720px) {
   .page-head { flex-direction: column; }
   .stack-row { grid-template-columns: 1fr; }
   .filters { grid-template-columns: 1fr 1fr; }
   .geo-map { height: 420px; min-height: 300px; }
+  .drawer-header, .drawer-body, .drawer-footer { padding-inline: 1rem; }
+  .drawer-footer { grid-template-columns: 1fr; }
+  .drawer-footer .btn-primary { grid-column: auto; }
+  .spec-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .filters { grid-template-columns: 1fr; }
+  .view-switch, .map-switch { width: 100%; justify-content: space-between; }
 }
 @media print {
-  .no-print, .geo-wrap, .masterplan-panel { display: none !important; }
+  .no-print, .geo-wrap, .masterplan-panel, .drawer-footer, .drawer-close { display: none !important; }
   .page { display: block; }
   .unit-table { font-size: 0.72rem; }
-  .drawer-backdrop { position: static; background: none; }
-  .drawer { width: 100%; box-shadow: none; }
+  .drawer-backdrop { position: static; z-index: auto; background: none; backdrop-filter: none; display: block; }
+  .drawer { position: static; width: 100%; max-width: none; height: auto; display: block; overflow: visible; box-shadow: none; }
+  .drawer-header, .drawer-body { position: static; padding: 0; border: 0; background: none; overflow: visible; }
 }
 </style>

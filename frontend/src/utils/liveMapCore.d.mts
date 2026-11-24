@@ -1,3 +1,5 @@
+export type MapStatus = 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'OFF_MARKET'
+
 export interface MapPin {
   id: string
   project: string
@@ -7,7 +9,7 @@ export interface MapPin {
   unitNumber: string
   label: string
   title: string
-  status: 'AVAILABLE' | 'RESERVED' | 'SOLD'
+  status: MapStatus
   rawStatus: string
   color: string
   price: number
@@ -32,7 +34,7 @@ export interface ProjectAvailability {
   longitude: number | null
   center: [number, number] | null
   masterplanImageUrl: string | null
-  counts: Record<'AVAILABLE' | 'RESERVED' | 'SOLD', number>
+  counts: Record<MapStatus, number>
   total: number
   minPrice: number | null
   maxPrice: number | null
@@ -44,14 +46,14 @@ export interface ProjectAvailability {
 export interface AvailabilityMapResult {
   projects: ProjectAvailability[]
   units: MapPin[]
-  counts: Record<'AVAILABLE' | 'RESERVED' | 'SOLD', number>
-  totals: { units: number; projects: number; available: number; reserved: number; sold: number }
+  counts: Record<MapStatus, number>
+  totals: { units: number; projects: number; available: number; reserved: number; sold: number; offMarket: number }
   legend: Array<{ key: string; label: string; color: string }>
 }
 
 export declare const MAP_STATUSES: readonly string[]
 export declare const MAP_STATUS_META: Readonly<Record<string, Readonly<{ en: string; ar: string; color: string }>>>
-export declare function mapStatus(property?: Record<string, any>): 'AVAILABLE' | 'RESERVED' | 'SOLD'
+export declare function mapStatus(property?: Record<string, any>): MapStatus
 export declare function toMapPin(property?: Record<string, any>): MapPin
 export declare function filterMapProperties(properties?: Record<string, any>[], filters?: Record<string, any>): Record<string, any>[]
 export declare function buildAvailabilityMap(properties?: Record<string, any>[], options?: { language?: string; filters?: Record<string, any> }): AvailabilityMapResult

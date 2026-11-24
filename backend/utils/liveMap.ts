@@ -5,13 +5,14 @@ import { unitStatus } from './unitInventory'
  * No organization filtering happens here — callers must pass an already
  * tenant/role scoped set of property rows.
  */
-export const MAP_STATUSES = ['AVAILABLE', 'RESERVED', 'SOLD'] as const
+export const MAP_STATUSES = ['AVAILABLE', 'RESERVED', 'SOLD', 'OFF_MARKET'] as const
 export type MapStatus = (typeof MAP_STATUSES)[number]
 
 export const MAP_STATUS_META: Record<MapStatus, { en: string; ar: string; color: string }> = {
   AVAILABLE: { en: 'Available', ar: 'متاح', color: '#10B981' },
   RESERVED: { en: 'Reserved', ar: 'محجوز', color: '#F59E0B' },
-  SOLD: { en: 'Sold', ar: 'مباع', color: '#F43F5E' }
+  SOLD: { en: 'Sold', ar: 'مباع', color: '#F43F5E' },
+  OFF_MARKET: { en: 'Off Market', ar: 'خارج السوق', color: '#64748B' }
 }
 
 export interface MapPropertyLike {
@@ -104,8 +105,15 @@ function bounded(value: unknown, min: number, max: number): number | null {
   return parsed !== null && parsed >= min && parsed <= max ? parsed : null
 }
 
-/** Every non-available, non-sold unit is shown amber (pending/reserved/rented). */
+/**
+ * Normalize every property into the exact bucket used by pins, counters,
+ * filters and the inspection drawer. OFF_MARKET must be checked before the
+ * generic inventory normalizer, which otherwise folds it into UNKNOWN.
+ */
 export function mapStatus(property: Pick<MapPropertyLike, 'status' | 'occupancyStatus'>): MapStatus {
+  const raw = String(property.status || '').toUpperCase()
+  const occupancy = String(property.occupancyStatus || '').toUpperCase()
+  if (raw === 'OFF_MARKET' || occupancy === 'OFF_MARKET') return 'OFF_MARKET'
   const normalized = unitStatus(property)
   if (normalized === 'AVAILABLE') return 'AVAILABLE'
   if (normalized === 'SOLD') return 'SOLD'
@@ -165,7 +173,7 @@ export function filterMapProperties(properties: MapPropertyLike[], filters: MapF
 
 export function buildAvailabilityMap(properties: MapPropertyLike[], language: 'en' | 'ar' = 'en', filters: MapFilters = {}) {
   const units = filterMapProperties(properties, filters).map(toMapPin)
-  const counts: Record<MapStatus, number> = { AVAILABLE: 0, RESERVED: 0, SOLD: 0 }
+  const counts: Record<MapStatus, number> = { AVAILABLE: 0, RESERVED: 0, SOLD: 0, OFF_MARKET: 0 }
   const grouped = new Map<string, ProjectAvailability>()
 
   for (const unit of units) {
@@ -182,7 +190,7 @@ export function buildAvailabilityMap(properties: MapPropertyLike[], language: 'e
         longitude: bounded(source?.longitude, -180, 180),
         center: null,
         masterplanImageUrl: source?.masterplanImageUrl?.trim() || null,
-        counts: { AVAILABLE: 0, RESERVED: 0, SOLD: 0 },
+        counts: { AVAILABLE: 0, RESERVED: 0, SOLD: 0, OFF_MARKET: 0 },
         total: 0,
         minPrice: null,
         maxPrice: null,
@@ -222,7 +230,8 @@ export function buildAvailabilityMap(properties: MapPropertyLike[], language: 'e
       projects: projects.length,
       available: counts.AVAILABLE,
       reserved: counts.RESERVED,
-      sold: counts.SOLD
+      sold: counts.SOLD,
+      offMarket: counts.OFF_MARKET
     },
     legend: MAP_STATUSES.map((status) => ({
       key: status,

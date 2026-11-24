@@ -161,6 +161,13 @@ test.before(async () => {
     type: 'VILLA', price: 300000, floors: 0, assignedAgentId: state.users.AGENT_OTHER.id,
     cityArea: 'Sheikh Zayed', latitude: 30.0197, longitude: 31.0089, mapX: 60, mapY: 30
   })
+  await createProperty('TOWER_OFF_MARKET', orgA, {
+    status: 'OFF_MARKET', projectName: 'Package44 Tower', buildingName: 'Block A', unitNumber: 'HC-9',
+    price: 120000, assignedAgentId: state.users.AGENT_OTHER.id, branchId: branch.id, teamId: team.id,
+    cityArea: 'Heliopolis', latitude: 30.0818, longitude: 31.3155,
+    unitLatitude: 30.0818, unitLongitude: 31.3155, mapX: 47, mapY: 41,
+    masterplanImageUrl: '/demo/masterplans/cairo-gardens.svg'
+  })
   await createProperty('FOREIGN', orgB, {
     status: 'AVAILABLE', projectName: 'Package44 Foreign', buildingName: 'Remote', unitNumber: 'F-1',
     price: 999999, assignedAgentId: state.users.ADMIN_B.id, latitude: 24.7136, longitude: 46.6753
@@ -191,16 +198,23 @@ test('Package 44: pure map helpers bucket statuses, filter and translate', () =>
   assert.equal(mapStatus({ status: 'UNDER_NEGOTIATION' }), 'RESERVED')
   assert.equal(mapStatus({ status: 'RENTED', occupancyStatus: 'TENANT_OCCUPIED' }), 'RESERVED')
   assert.equal(mapStatus({ status: 'SOLD' }), 'SOLD')
+  assert.equal(mapStatus({ status: 'OFF_MARKET' }), 'OFF_MARKET')
   assert.equal(MAP_STATUS_META.AVAILABLE.color, '#10B981')
+  assert.equal(MAP_STATUS_META.OFF_MARKET.color, '#64748B')
   assert.equal(mapStatusLabel('AVAILABLE', 'ar'), 'متاح')
+  assert.equal(mapStatusLabel('OFF_MARKET', 'en'), 'Off Market')
 
   const units = [
     { id: 'u1', status: 'AVAILABLE', price: 100, currency: 'EGP', projectName: 'Tower', buildingName: 'A', unitNumber: 'U-1', type: 'APARTMENT', latitude: 30, longitude: 31, unitLatitude: 30.001, unitLongitude: 31.001, mapX: 20, mapY: 30 },
     { id: 'u2', status: 'SOLD', price: 300, currency: 'EGP', projectName: 'Tower', buildingName: 'A', unitNumber: 'U-2', type: 'VILLA', latitude: 30, longitude: 31 },
-    { id: 'u3', status: 'PENDING', price: 200, currency: 'EGP', projectName: 'Villa', buildingName: 'B', unitNumber: 'U-3', type: 'APARTMENT', latitude: 31, longitude: 32 }
+    { id: 'u3', status: 'PENDING', price: 200, currency: 'EGP', projectName: 'Villa', buildingName: 'B', unitNumber: 'U-3', type: 'APARTMENT', latitude: 31, longitude: 32 },
+    { id: 'u4', status: 'OFF_MARKET', price: 150, currency: 'EGP', projectName: 'Tower', buildingName: 'A', unitNumber: 'HC-9', type: 'APARTMENT', latitude: 30.08, longitude: 31.31 }
   ]
   const map = buildAvailabilityMap(units, { language: 'en' })
-  assert.deepEqual(map.counts, { AVAILABLE: 1, RESERVED: 1, SOLD: 1 })
+  assert.deepEqual(map.counts, { AVAILABLE: 1, RESERVED: 1, SOLD: 1, OFF_MARKET: 1 })
+  assert.equal(map.totals.offMarket, 1)
+  assert.equal(map.units.find((unit) => unit.id === 'u4').status, 'OFF_MARKET')
+  assert.equal(map.units.find((unit) => unit.id === 'u4').color, MAP_STATUS_META.OFF_MARKET.color)
   assert.equal(map.totals.projects, 2)
   assert.equal(map.projects.find((project) => project.name === 'Tower').minPrice, 100)
   assert.equal(map.projects.find((project) => project.name === 'Tower').maxPrice, 300)
@@ -213,6 +227,7 @@ test('Package 44: pure map helpers bucket statuses, filter and translate', () =>
   assert.equal(filtered.units[0].id, 'u2')
   const arabic = buildAvailabilityMap(units, { language: 'ar' })
   assert.equal(arabic.legend.find((item) => item.key === 'SOLD').label, 'مباع')
+  assert.equal(arabic.legend.find((item) => item.key === 'OFF_MARKET').label, 'خارج السوق')
   assert.match(masterplanDataUrl('Tower', 'ar'), /^data:image\/svg/)
 })
 
@@ -222,25 +237,33 @@ test('Package 44: availability endpoint aggregates live counts and is tenant sco
 
   const all = await api('GET', '/api/maps/availability', { token: state.tokens.ADMIN_A })
   assert.equal(all.status, 200, JSON.stringify(all.data))
-  assert.deepEqual(all.data.data.counts, { AVAILABLE: 1, RESERVED: 1, SOLD: 1 })
-  assert.equal(all.data.data.totals.units, 3)
+  assert.deepEqual(all.data.data.counts, { AVAILABLE: 1, RESERVED: 1, SOLD: 1, OFF_MARKET: 1 })
+  assert.equal(all.data.data.totals.units, 4)
   assert.equal(all.data.data.totals.projects, 2)
   const tower = all.data.data.projects.find((project) => project.name === 'Package44 Tower')
-  assert.deepEqual(tower.counts, { AVAILABLE: 1, RESERVED: 0, SOLD: 1 })
+  assert.deepEqual(tower.counts, { AVAILABLE: 1, RESERVED: 0, SOLD: 1, OFF_MARKET: 1 })
   assert.equal(tower.minPrice, 100000)
   assert.equal(tower.maxPrice, 200000)
   assert.equal(tower.masterplanImageUrl, '/demo/masterplans/cairo-gardens.svg')
   assert.ok(all.data.data.units.find((unit) => unit.unitNumber === 'T-A-101').hasMasterplanPin)
+
+  const offMarketPin = all.data.data.units.find((unit) => unit.unitNumber === 'HC-9')
+  assert.equal(offMarketPin.status, 'OFF_MARKET')
+  assert.equal(offMarketPin.rawStatus, 'OFF_MARKET')
+  assert.equal(offMarketPin.color, MAP_STATUS_META.OFF_MARKET.color)
 
   const foreign = await api('GET', '/api/maps/availability', { token: state.tokens.ADMIN_B })
   assert.equal(foreign.data.data.totals.units, 1)
   assert.equal(foreign.data.data.units[0].project, 'Package44 Foreign')
 
   const project = await api('GET', `/api/maps/availability?project=${encodeURIComponent('Package44 Tower')}`, { token: state.tokens.ADMIN_A })
-  assert.equal(project.data.data.totals.units, 2)
+  assert.equal(project.data.data.totals.units, 3)
   const status = await api('GET', '/api/maps/availability?status=SOLD', { token: state.tokens.ADMIN_A })
   assert.equal(status.data.data.totals.units, 1)
   assert.equal(status.data.data.units[0].unitNumber, 'T-A-102')
+  const offMarket = await api('GET', '/api/maps/availability?status=OFF_MARKET', { token: state.tokens.ADMIN_A })
+  assert.equal(offMarket.data.data.totals.units, 1)
+  assert.equal(offMarket.data.data.units[0].unitNumber, 'HC-9')
   const type = await api('GET', '/api/maps/availability?type=VILLA', { token: state.tokens.ADMIN_A })
   assert.equal(type.data.data.totals.units, 1)
   const price = await api('GET', '/api/maps/availability?minPrice=150000&maxPrice=250000', { token: state.tokens.ADMIN_A })
@@ -249,6 +272,7 @@ test('Package 44: availability endpoint aggregates live counts and is tenant sco
 
   const arabic = await api('GET', '/api/maps/availability?language=ar', { token: state.tokens.ADMIN_A })
   assert.equal(arabic.data.data.legend.find((item) => item.key === 'AVAILABLE').label, 'متاح')
+  assert.equal(arabic.data.data.legend.find((item) => item.key === 'OFF_MARKET').label, 'خارج السوق')
   const invalid = await api('GET', '/api/maps/availability?status=BOGUS', { token: state.tokens.ADMIN_A })
   assert.equal(invalid.status, 400)
 })
@@ -261,8 +285,8 @@ test('Package 44: map visibility follows AGENT and TEAM_LEAD scope server-side',
 
   const lead = await api('GET', '/api/maps/availability', { token: state.tokens.TEAM_LEAD_A })
   assert.equal(lead.status, 200)
-  assert.equal(lead.data.data.totals.units, 2)
-  assert.deepEqual(lead.data.data.units.map((unit) => unit.unitNumber).sort(), ['T-A-101', 'T-A-102'])
+  assert.equal(lead.data.data.totals.units, 3)
+  assert.deepEqual(lead.data.data.units.map((unit) => unit.unitNumber).sort(), ['HC-9', 'T-A-101', 'T-A-102'])
   assert.ok(!lead.data.data.units.some((unit) => unit.unitNumber === 'V-4'))
 })
 
@@ -334,11 +358,26 @@ test('Package 44: additive schema, routes, bilingual UI and offline demo are wir
   assert.match(view, /Live availability map/)
   assert.match(view, /Stacking grid|شبكة التكديس/)
   assert.match(view, /Installment simulator|محاكاة الأقساط/)
-  assert.match(view, /Add to comparison|أضف للمقارنة/)
+  assert.match(view, /Compare|أضف للمقارنة/)
   assert.match(view, /leaflet/)
   assert.match(view, /L\.circleMarker/)
   assert.match(view, /masterplanDataUrl/)
   assert.match(view, /@media print/)
+
+  // Visual-review regressions: layer isolation, popup dismissal, fit framing
+  // and a single normalized status source for pins and inspection details.
+  assert.match(view, /isolation: isolate; z-index: 1;/)
+  assert.match(view, /map\.closePopup\(\)/)
+  assert.match(view, /padding: \[48, 48\], maxZoom: 13/)
+  assert.match(view, /basemaps\.cartocdn\.com/)
+  assert.match(view, /drawer-header/)
+  assert.match(view, /drawer-body/)
+  assert.match(view, /drawer-footer/)
+  assert.match(view, /overflow-y: auto/)
+  assert.match(view, /mapStatusLabel\(unit\.status/)
+  assert.match(view, /mapStatusLabel\(selected\.status/)
+  assert.match(view, /OFF_MARKET/)
+  assert.match(read('backend/utils/liveMap.ts'), /OFF_MARKET/)
 
   const demoAdapter = read('frontend/src/api/demoAdapter.ts')
   assert.match(demoAdapter, /root === 'maps'/)

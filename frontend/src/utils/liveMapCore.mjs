@@ -3,11 +3,12 @@
 
 import { unitStatus } from './unitInventoryCore.mjs'
 
-export const MAP_STATUSES = ['AVAILABLE', 'RESERVED', 'SOLD']
+export const MAP_STATUSES = ['AVAILABLE', 'RESERVED', 'SOLD', 'OFF_MARKET']
 export const MAP_STATUS_META = Object.freeze({
   AVAILABLE: Object.freeze({ en: 'Available', ar: 'متاح', color: '#10B981' }),
   RESERVED: Object.freeze({ en: 'Reserved', ar: 'محجوز', color: '#F59E0B' }),
-  SOLD: Object.freeze({ en: 'Sold', ar: 'مباع', color: '#F43F5E' })
+  SOLD: Object.freeze({ en: 'Sold', ar: 'مباع', color: '#F43F5E' }),
+  OFF_MARKET: Object.freeze({ en: 'Off Market', ar: 'خارج السوق', color: '#64748B' })
 })
 
 function finite(value) {
@@ -21,8 +22,15 @@ function bounded(value, min, max) {
   return parsed !== null && parsed >= min && parsed <= max ? parsed : null
 }
 
-/** Pending, rented and maintenance units are displayed in the amber bucket. */
+/**
+ * Normalize every property into the exact bucket used by pins, counters,
+ * filters and the inspection drawer. OFF_MARKET must be checked before the
+ * generic inventory normalizer, which otherwise folds it into UNKNOWN.
+ */
 export function mapStatus(property = {}) {
+  const raw = String(property.status || '').toUpperCase()
+  const occupancy = String(property.occupancyStatus || '').toUpperCase()
+  if (raw === 'OFF_MARKET' || occupancy === 'OFF_MARKET') return 'OFF_MARKET'
   const normalized = unitStatus(property)
   if (normalized === 'AVAILABLE') return 'AVAILABLE'
   if (normalized === 'SOLD') return 'SOLD'
@@ -84,7 +92,7 @@ export function buildAvailabilityMap(properties = [], options = {}) {
   const language = options.language === 'ar' ? 'ar' : 'en'
   const filters = options.filters || {}
   const units = filterMapProperties(properties, filters).map(toMapPin)
-  const counts = { AVAILABLE: 0, RESERVED: 0, SOLD: 0 }
+  const counts = { AVAILABLE: 0, RESERVED: 0, SOLD: 0, OFF_MARKET: 0 }
   const grouped = new Map()
 
   for (const unit of units) {
@@ -99,7 +107,7 @@ export function buildAvailabilityMap(properties = [], options = {}) {
         longitude: bounded(source.longitude, -180, 180),
         center: null,
         masterplanImageUrl: source.masterplanImageUrl || null,
-        counts: { AVAILABLE: 0, RESERVED: 0, SOLD: 0 },
+        counts: { AVAILABLE: 0, RESERVED: 0, SOLD: 0, OFF_MARKET: 0 },
         total: 0,
         minPrice: null,
         maxPrice: null,
@@ -139,7 +147,8 @@ export function buildAvailabilityMap(properties = [], options = {}) {
       projects: projects.length,
       available: counts.AVAILABLE,
       reserved: counts.RESERVED,
-      sold: counts.SOLD
+      sold: counts.SOLD,
+      offMarket: counts.OFF_MARKET
     },
     legend: MAP_STATUSES.map((key) => ({
       key,
