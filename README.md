@@ -1,129 +1,73 @@
 # EstateOS
 
-EstateOS is a multi-user real-estate management application: a Vue 3 single-page frontend, an Express REST API, and a PostgreSQL database accessed through Prisma.
+![Status](https://img.shields.io/badge/status-active-success?style=flat-square)
+![Vue 3](https://img.shields.io/badge/Vue%203-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Node / Express](https://img.shields.io/badge/Node%20%2F%20Express-339933?style=flat-square&logo=node.js&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat-square&logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![EN / AR RTL](https://img.shields.io/badge/EN%20%2F%20AR%20RTL-0F766E?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-285%2B%20passing-brightgreen?style=flat-square)
 
-> The standalone `real-estate-locator.html` file in the project root is a **legacy browser prototype** (Leaflet + IndexedDB, no server, no accounts). It is kept for reference only and is **not** part of the EstateOS application described here. Older point-in-time reports in the root (`FINAL_COMPLETION_REPORT.md`, `IMPLEMENTATION_REPORT.md`, etc.) are historical notes, not the current source of truth. See [RUNBOOK.md](RUNBOOK.md) for setup and [ARCHITECTURE.md](ARCHITECTURE.md) for structure.
+**Multi-Tenant Bilingual Real Estate Agency & Property Management SaaS**
 
-## Stack
+EstateOS is a full-stack, organization-scoped platform for agencies and property managers: CRM, property inventory, deals, finance, client and owner portals, and automation in one English/Arabic, RTL-ready application.
 
-| Layer | Technology | Location |
+## Core Capabilities
+
+- **CRM & Lead Scoring** — Lead records with seven matching criteria, scored property matches, priority tiers, follow-up buckets and automation rules, bilingual WhatsApp handoff links, and a validated CSV import wizard with preview and error reports.
+- **Property Inventory & Stacking Grid** — Property CRUD, status board, gallery and document attachments, advanced search with Leaflet map filtering, side-by-side comparison, and a visual unit inventory grid grouped by project, building and floor.
+- **Deals & Installment Simulator** — Forward-only deal workflow with closing checklists and guarded transitions, installment schedules, interactive installment/mortgage simulator with bilingual amortization, payments with aging buckets, and historical FX snapshots.
+- **Owner & Client Portals** — Revocable read-only owner portfolio links and tenant-scoped client portal views backed by allow-listed fields for deals, payments and documents.
+- **Commissions & Referrals** — Decimal commission math and statements, owner payouts, referral partners with snapshotted per-deal splits, and a role-aware sales quota leaderboard.
+- **White-Label Branding & SaaS Quotas** — Organization branding (logo, colors, theme, bilingual footer), plan tiers with tenant overrides, and enforced user/property/deal quotas.
+- **Automation & Audit Logs** — Signed, tenant-scoped webhooks with retries, in-app notifications and reminders, activity feed, bounded audit exports, deep health checks, and per-endpoint rate limits.
+
+## Architecture & Tech Stack
+
+| Layer | Stack | Location |
 | --- | --- | --- |
-| Frontend | Vue 3 (Composition API), TypeScript, Vite, Pinia, Vue Router 4, Axios | `frontend/src/` |
-| Map | Leaflet with OpenStreetMap tiles (no paid API key) | `frontend/src/views/AdvancedSearchView.vue` |
-| API | Express 5, TypeScript, JWT auth, bcrypt, Helmet, rate limiting, Multer | `backend/` → compiled to `dist-backend/` |
-| Database | PostgreSQL, Prisma 6.4.1 ORM and migrations | `prisma/schema.prisma`, `prisma/migrations/` |
-| Tests | Node's built-in `node:test` runner (no separate test framework) | `tests/` |
+| Frontend | Vue 3 (Composition API), TypeScript, Vite, Pinia, Vue Router 4, Axios, Leaflet | `frontend/src/` |
+| API | Express 5, TypeScript, JWT auth, bcrypt, Helmet, rate limiting, Multer | `backend/` → `dist-backend/` |
+| Database | PostgreSQL with Prisma 6.4.1 ORM and additive migrations | `prisma/schema.prisma`, `prisma/migrations/` |
+| Tests | Node built-in `node:test` runner (285+ tests) | `tests/` |
+| Internationalization | Inline EN/AR strings with LTR/RTL switching and responsive, print-ready styles | `frontend/src/` |
 
-The UI supports English and Arabic with RTL layout switching. All monetary arithmetic uses decimal values, with historical exchange-rate snapshots stored alongside multi-currency records.
+Every endpoint and query is scoped by `organizationId`; branch/team visibility is resolved server-side for `TEAM_LEAD` and `AGENT` roles.
 
-## Quick start
+## Quick Start (Local Setup)
 
-Prerequisites: Node.js, a reachable PostgreSQL server, and a database/role configured as described in [RUNBOOK.md](RUNBOOK.md).
+Prerequisites: Node.js and a reachable PostgreSQL server (see [RUNBOOK.md](RUNBOOK.md) for database provisioning).
 
-```powershell
-npm install
-# Copy .env.example to .env and set DATABASE_URL, JWT_SECRET, CORS_ORIGIN, UPLOAD_PATH
-npm run prisma:generate
-npm run db:migrate          # apply checked-in migrations (prisma migrate deploy)
+1. `npm install`
+2. Copy `.env.example` to `.env` and set `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN` and `UPLOAD_PATH`. Then run `npm run prisma:generate` and `npm run db:migrate`, and create the first administrator with `scripts/create-admin.ps1` before seeding (details in [RUNBOOK.md](RUNBOOK.md)).
+3. `npm run db:seed:demo`
+4. `npm run dev` for the UI at `http://localhost:5173`; run `npm run dev:api` in a second terminal for the API at `http://localhost:3000`.
 
-npm run dev:api             # API on http://localhost:3000
-npm run dev                 # Vite UI on http://localhost:5173, proxies /api to :3000
-```
+`.env` is git-ignored — `.env.example` is the safe template. The demo seeder is idempotent (a second run creates 0 rows) and never changes existing ADMIN accounts.
 
-Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe template.
+## Demo Accounts
 
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm test` | Run all 285 automated tests (`node --test tests/**/*.test.js`) |
-| `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
-| `npm run typecheck` | Type-check both backend and frontend without emitting files |
-| `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
-| `npm run prisma:validate` / `npm run prisma:generate` | Validate schema / regenerate Prisma Client |
-| `npm run db:verify` | Redacted connectivity and role/database check |
-| `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
-| `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
-
-Current verification status: **285 tests pass, 0 fail**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
-
-## What the application does
-
-- **Authentication and access control** — JWT login, bcrypt password hashing, `ADMIN` / `MANAGER` / `AGENT` / `ACCOUNTANT` roles, registration-approval states (`PENDING`, `ACTIVE`, `REJECTED`, `SUSPENDED`), token revocation via `tokenVersion`, and organization-scoped data access. Finance and reports are limited to `ADMIN`, `MANAGER`, and `ACCOUNTANT`.
-- **Properties** — CRUD, reference numbers, classification (sale/rent), status transitions, agent assignment, image gallery, documents, activity history, advanced search/filtering, pagination, sorting, and a Leaflet map view with map-bounds filtering.
-- **Lead matching** — Leads carry seven criteria: `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`. `GET /api/leads/:id/matches` searches available, active, organization-scoped properties (agents see only their assigned properties), then scores candidates by budget, type, location, bedroom count and area. Each result includes a numeric score and human-readable reasons (for example "Budget fit", "Location match"); with no criteria the fallback is "Available property". The Leads screen exposes a **Matches** dialog and can convert a matched property into a deal.
-- **Deal workflow** — Deals move forward only: `DRAFT → PENDING → ACTIVE → COMPLETED`, with `CANCELLED` allowed from open stages and both terminal stages closed. New deals cannot be created in `COMPLETED` or `CANCELLED`; `COMPLETED` sets `closedAt`. Real stage changes notify managers once per transition and write audit entries. Deal detail shows payments, commissions, expenses, linked documents, historical FX data, and an organization-scoped audit trail.
-- **Finance** — Payments, expenses, commissions, owner payouts and payment aging with decimal money handling, idempotency keys and approval/state rules.
-- **CSV export** — Available on Properties, Reports and the generic resource lists. The shared `downloadCsv` helper writes UTF-8 with a BOM (Arabic headers stay readable in Excel), CRLF line endings, quoted/escaped cells, and neutralizes spreadsheet formula injection. Property export pages through all filtered results.
-- **Share summary** — On Property Details, **Share Property** builds a plain-text, client-ready summary from listing fields only (title, reference, price, status, specifications, location, images and description). Owner/agent records, deals, finances, audit/activity, operational notes and other internal notes are deliberately excluded. It copies to the clipboard with a read-only preview fallback, and calls `POST /api/properties/:id/share-summary` to record an activity/audit entry. Both English and Arabic summaries are supported.
-- **Other modules** — Owners, appointments with advisory conflict warnings, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings. Branch/Team grouping now scopes Users, Leads, Properties and Deals for `TEAM_LEAD` and other roles.
-- **WhatsApp handoff** — Bilingual EN/AR click-to-chat links build property-share, appointment, installment and lead-follow-up messages from public fields only; managers can add tenant-scoped template overrides.
-- **Owner portal** — Managers can generate, copy, regenerate and revoke a read-only link at `/owner-portal/:token`. The public API returns only allow-listed owner and portfolio fields; notes, assignments, payouts, financial data and other tenants' records are excluded.
-
-## Delivery packages 5–10
-
-- **Package 5** — Managed FX rates, public property share links and automated reminders; the shared CSV export path adds UTF-8 BOM, CRLF, escaping and formula-injection protection, with paginated property exports.
-- **Package 6** — lead follow-up buckets, lease renewal reminders and consolidated commission statements with historical FX snapshots.
-- **Package 7** — owner statements, property price history, sanitized property duplication and client-ready share summaries.
-- **Package 8** — CSV imports for properties/leads with dry-run validation, deal installment schedules with `Payment.dueAt`, and safe, category-filtered notification targets.
-- **Package 9** — completed maintenance can create one linked expense idempotently; funnel/SLA metrics with CSV export and uncontacted-lead reminders; a property status board with guarded quick transitions.
-- **Package 10** — per-endpoint in-memory rate limits with `429`/`Retry-After`, security headers and `X-Request-Id`, deep health checks, ADMIN-only snapshot export, a bounded-query audit and synced documentation.
-
-## Delivery package status (2026-11-24)
-
-Packages 11-13 were earlier committed; Packages 14-43 are now consolidated through this release. The table records the actual repository state.
-
-| Package | Commit | Delivered capability |
+| Role | Email | Password |
 | --- | --- | --- |
-| 11 | `5a3c029` | Authenticated smoke coverage over tenant-scoped GET endpoints, RTL/print polish. |
-| 12 | `5875bb8` | Direct document/image upload, download, preview and storage-safety tests. |
-| 13 | `0aff7e4` | Dashboard date-range pills (`7d`/`30d`/`90d`/all), summary ranges and 768px/touch-target polish. |
-| 14 | `7fca507` | Property floorplans/brochures as typed attachments, public share display, reorder/cover controls. |
-| 15 | `7fca507` | Lead priority score/tier, recalculation endpoint, source/budget filters and priority sorting. |
-| 16 | `1d1b39c` | Deal closing checklist, documented override reason, forward-only stage guard and completion audit. |
-| 17 | `1d1b39c` | Payment aging buckets (`CURRENT`, `1_30_DAYS`, `31_60_DAYS`, `60_PLUS_DAYS`, `PAID`) and aging reports. |
-| 18 | `c1bb5ef` | Owner payout records/settlement and recurring maintenance intervals with next-due tracking. |
-| 19 | Present in baseline | Advisory appointment overlap warnings (`APPOINTMENT_CONFLICT`) plus list/agenda toggle. |
-| 20 | `c1bb5ef` | Frontend/backend permission matrix, bounded resource actions and UTF-8 BOM audit CSV export. |
-| 21 | `8d111ec` | Global Ctrl/Cmd+K command palette, recent-item actions and saved property filter presets. |
-| 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
-| 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
-| 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
-| 25 | `acb9035` | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
-| 26 | `f01ba5b` | Bilingual EN/AR WhatsApp click-to-chat templates on property, lead, appointment and installment UIs, with tenant-scoped manager overrides. |
-| 27 | `cae3093` | Tenant-scoped Branch/Team hierarchy, `TEAM_LEAD` role, role-aware visibility and bilingual Settings/Users controls. |
-| 28 | `7ee3de8` | Revocable tenant-scoped owner portal links with a public read-only allow-listed portfolio view and copy/regenerate/revoke controls. |
-| 29 | `3583e96` | Self-service user profile (language, avatar, password) with audit-safe updates. |
-| 30 | `3583e96` | Admin account lifecycle controls and per-agent monthly sales targets. |
-| 31 | `1a8612f` | Tenant-scoped client portal with allow-listed deal, payment and document views. |
-| 32 | `1a8612f` | Interactive installment and mortgage simulator with bilingual amortization output. |
-| 33 | `7af60a6` | In-app notifications with read state, deep links and deduplicated reminder alerts. |
-| 34 | `7af60a6` | Side-by-side property comparison with bilingual features and payment terms. |
-| 35 | `79c4c2d` | Tenant-owned referral partners and snapshotted per-deal commission splits. |
-| 36 | `79c4c2d` | Reusable bilingual contract templates with validated placeholder rendering. |
-| 37 | `4808ae9` | Sales quota leaderboard with role-aware visibility and period filters. |
-| 38 | `4808ae9` | Validated CSV import wizard with preview, error report and BOM-safe template. |
-| 39 | `130a635` | White-label organization branding (logo, colors, theme, bilingual footer). |
-| 40 | `130a635` | SaaS plan tiers with tenant overrides and enforced user/property/deal quotas. |
-| 41 | `7484465` | Follow-up automation rules, deduplicated tasks and role-scoped task views. |
-| 42 | `7484465` | Visual unit inventory grid grouped by project, building and floor. |
-| 43 | This commit | Final full regression, refreshed idempotent demo seed, timestamped SQL backup, synced docs and live-service handover. |
+| `ADMIN` | The email passed to `create-admin.ps1` (e.g. `admin@example.com`) | The password set during admin creation |
+| `TEAM_LEAD` | `demo.teamlead@estateos.local` | `EstateDemo2026!` |
+| `AGENT` | `demo.agent@estateos.local` | `EstateDemo2026!` |
 
-### Package 43 final handover
+Demo user passwords come from `DEMO_SEED_PASSWORD` (default shown above) and can be overridden with that environment variable.
 
-`npm run verify` passed with **285 tests / 0 failures** after the final demo sync. `npm run db:seed:demo` is idempotent: it enriches the existing demo tenant with Package 33–42 records using stable `demo-` IDs and `upsert(..., update: {})`, and a second run creates 0 rows. `tests/package24-demo-seed.test.js` now asserts the bilingual, tenant-owned demo records. A timestamped plain-SQL `pg_dump` snapshot was written under git-ignored `backups/` before the handover commit. Local services: API `http://localhost:3000/api/health` and frontend `http://localhost:5173`.
+## Verification
 
-### Package 22 webhook contract
+`npm run verify` runs Prisma validation, both TypeScript checks, API compilation, the full test suite and the production frontend build.
 
-Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/DELETE /api/webhooks/endpoints/:id`, `GET /api/webhooks/deliveries`, `GET /api/webhooks/deliveries/:id`, `POST /api/webhooks/deliveries/:id/retry`. Events are exactly `property.created`, `lead.created`, `deal.stage_changed` and `payment.recorded`. The raw `whsec_...` secret is returned only on creation; only its hash is stored. Signatures use `X-Webhook-Signature` and a server-side pepper. Private/local receiver URLs are allowed only when `NODE_ENV != production` and `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+## Delivery History
 
-### Package 25 lifecycle coverage
-
-`tests/package25-e2e-lifecycle.test.js` runs against the compiled API and a local mocked receiver. It covers owner/property/share link, public property read, lead scoring/recompute/filtering, appointment conflict warnings, deal checklist/override/`COMPLETED` ("WON" equivalent), installments/payments/aging, commissions/statements, maintenance/expense/recurrence, owner statement/payout settlement, activity CSV and signed webhook delivery verification. All fixtures are tagged and removed in FK-safe order.
+Detailed package-by-package notes (Package 5, Package 10, and every release through Package 43) are maintained in [ARCHITECTURE.md](ARCHITECTURE.md) and [RUNBOOK.md](RUNBOOK.md).
 
 ## Documentation
 
-- [RUNBOOK.md](RUNBOOK.md) — local setup, database steps, migration procedure, verification and safety notes.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — how the pieces fit together.
-- [FINAL_CLOSURE_REPORT.md](FINAL_CLOSURE_REPORT.md) — historical Packages 1–28 checklist, verification and upgrade roadmap; see the delivery table above for Packages 29–43.
-- `.env.example` — configuration template (no real secrets).
+- [ARCHITECTURE.md](ARCHITECTURE.md) — structure, role visibility and package history.
+- [RUNBOOK.md](RUNBOOK.md) — local setup, migrations, verification and delivery history.
+- [AGENTS.md](AGENTS.md) — operating rules for coding agents.
+
+> The root `real-estate-locator.html` is a legacy browser prototype kept for reference; it is not part of the EstateOS application.
