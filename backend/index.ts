@@ -24,6 +24,7 @@ import searchRoutes from './routes/search'
 import publicRoutes from './routes/public'
 import adminRoutes from './routes/admin'
 import webhookRoutes from './routes/webhooks'
+import hierarchyRoutes from './routes/hierarchy'
 
 import { errorHandler } from './middleware/errorHandler'
 import { notFoundHandler } from './middleware/notFound'
@@ -144,6 +145,7 @@ app.use('/api/search', searchRoutes)
 app.use('/api/public', publicRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/webhooks', webhookRoutes)
+app.use('/api/hierarchy', hierarchyRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

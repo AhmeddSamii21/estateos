@@ -38,7 +38,8 @@ export const ROLE_LABELS: Record<Role, [string, string]> = {
   ADMIN: ['Administrator', 'مدير عام'],
   MANAGER: ['Manager', 'مدير'],
   AGENT: ['Agent', 'وكيل'],
-  ACCOUNTANT: ['Accountant', 'محاسب']
+  ACCOUNTANT: ['Accountant', 'محاسب'],
+  TEAM_LEAD: ['Team Lead', 'قائد الفريق']
 }
 
 const all = (value: boolean): Record<string, boolean> =>
@@ -46,7 +47,7 @@ const all = (value: boolean): Record<string, boolean> =>
 
 /** Client-side mirror of the backend matrix, used as an offline fallback. */
 export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
-  roles: ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT'],
+  roles: ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'TEAM_LEAD'],
   permissions: [...PERMISSION_KEYS],
   matrix: {
     ADMIN: all(true),
@@ -62,6 +63,16 @@ export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
       'activity.view': true
     },
     AGENT: {
+      ...all(false),
+      'properties.view': true,
+      'properties.manage': true,
+      'leads.view': true,
+      'leads.manage': true,
+      'deals.view': true,
+      'deals.manage': true,
+      'activity.view': true
+    },
+    TEAM_LEAD: {
       ...all(false),
       'properties.view': true,
       'properties.manage': true,

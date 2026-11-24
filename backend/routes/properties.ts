@@ -8,7 +8,8 @@ import {
   PropertyClassification,
   PropertyCondition,
   PropertyStatus,
-  PropertyType
+  PropertyType,
+  Role
 } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
@@ -36,6 +37,8 @@ import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { createStorageKey, sanitizeOriginalName, validateDocumentFile, validateImageFile } from '../utils/files'
 import { readDocument, readPropertyImage, removeDocument, removePropertyImage, writeDocument, writePropertyImage } from '../storage/local'
 import { parseAttachmentKind, serializeAttachment, validateAttachmentUrl } from '../utils/propertyAttachments'
+import { canSee, propertyVisibility, teamVisibility, visibility } from '../utils/visibility'
+import { assertHierarchyRefs } from '../utils/hierarchy'
 import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
 import { PROPERTY_IMPORT_FIELDS, propertyImportData } from '../utils/propertyImport'
 import { BOARD_STATUSES, boardQuickTransitions, groupByBoardStatus } from '../utils/propertyBoard'
@@ -163,6 +166,11 @@ async function listProperties(req: Request, res: Response, next: NextFunction): 
     const filters = req.query as Record<string, unknown>
     const { where, orderBy } = buildPropertySearch(filters as never, organizationId)
     if (req.user?.role === 'AGENT') where.assignedAgentId = userIdOf(req)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = propertyVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
 
     const [total, properties] = await Promise.all([
       prisma.property.count({ where }),
@@ -444,6 +452,11 @@ router.get('/board', async (req, res, next) => {
       status: { in: [...BOARD_STATUSES] }
     }
     if (req.user?.role === 'AGENT') where.assignedAgentId = userIdOf(req)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = propertyVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
     const properties = await prisma.property.findMany({
       where,
       take: 500,
@@ -518,6 +531,12 @@ router.get('/:id', async (req, res, next) => {
     if (!property) throw createError('Property not found', 404)
     if (req.user?.role === 'AGENT' && property.assignedAgentId !== userIdOf(req)) {
       throw createError('Insufficient permissions to view this property', 403)
+    }
+    if (role === Role.TEAM_LEAD) {
+      const visibilityContext = await visibility(req)
+      if (!canSee(visibilityContext, property, 'property')) {
+        throw createError('Insufficient permissions to view this property', 403)
+      }
     }
     // Finance-only relations are omitted entirely for non-finance viewers;
     // returning empty arrays would still leak the shape of hidden data.
@@ -713,7 +732,10 @@ router.post('/', async (req, res, next) => {
     const assignedAgentId = optionalString(req.body?.assignedAgent, 'assignedAgent', 100)
       || optionalString(req.body?.assignedAgentId, 'assignedAgentId', 100)
     const ownerId = optionalString(req.body?.ownerId, 'ownerId', 100)
+    const branchId = optionalString(req.body?.branchId, 'branchId', 100)
+    const teamId = optionalString(req.body?.teamId, 'teamId', 100)
     await assertRelatedUsers(assignedAgentId, ownerId, organizationId)
+    await assertHierarchyRefs(organizationId, branchId, teamId)
 
     const property = await prisma.$transaction(async (tx) => {
       const created = await tx.property.create({
@@ -750,7 +772,9 @@ router.post('/', async (req, res, next) => {
           operationalNotes: optionalString(req.body?.operationalNotes, 'operationalNotes', 5000),
           organizationId,
           ownerId,
-          assignedAgentId
+          assignedAgentId,
+          branchId,
+          teamId
         }
       })
       await logPropertyActivity(tx, { propertyId: created.id, userId, action: 'PROPERTY_CREATED' })
@@ -860,6 +884,15 @@ router.patch('/:id', async (req, res, next) => {
       await assertRelatedUsers(undefined, ownerId, organizationId)
       data.owner = ownerId ? { connect: { id: ownerId } } : { disconnect: true }
       changes.ownerId = { before: existing.ownerId, after: ownerId }
+    }
+    if (body.branchId !== undefined || body.teamId !== undefined) {
+      const branchId = body.branchId === undefined ? undefined : optionalString(body.branchId, 'branchId', 100)
+      const teamId = body.teamId === undefined ? undefined : optionalString(body.teamId, 'teamId', 100)
+      await assertHierarchyRefs(organizationId, branchId, teamId)
+      data.branch = branchId === undefined ? undefined : branchId ? { connect: { id: branchId } } : { disconnect: true }
+      data.team = teamId === undefined ? undefined : teamId ? { connect: { id: teamId } } : { disconnect: true }
+      changes.branchId = { before: existing.branchId, after: branchId ?? existing.branchId }
+      changes.teamId = { before: existing.teamId, after: teamId ?? existing.teamId }
     }
 
     const property = await prisma.$transaction(async (tx) => {

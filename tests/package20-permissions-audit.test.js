@@ -143,7 +143,7 @@ test.after(async () => {
 test('role permission matrix is available to management only', async () => {
   const response = await api('GET', '/api/settings/permissions', { token: state.tokens.ADMIN_A })
   assert.equal(response.status, 200, JSON.stringify(response.data))
-  assert.deepEqual(response.data.data.roles, ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT'])
+  assert.deepEqual(response.data.data.roles, ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'TEAM_LEAD'])
   assert.ok(response.data.data.permissions.includes('audit.export'))
   assert.equal(response.data.data.matrix.ADMIN['audit.export'], true)
   assert.equal(response.data.data.matrix.MANAGER['snapshots.export'], false)

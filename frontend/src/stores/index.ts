@@ -16,7 +16,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   ADMIN: 'Admin',
   MANAGER: 'Manager',
   AGENT: 'Agent',
-  ACCOUNTANT: 'Accountant'
+  ACCOUNTANT: 'Accountant',
+  TEAM_LEAD: 'Team Lead'
 }
 
 export const useStore = defineStore('main', () => {

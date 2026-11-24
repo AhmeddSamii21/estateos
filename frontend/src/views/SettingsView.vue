@@ -71,6 +71,71 @@
 
       <section v-if="!fxOnly && store.canManage" class="card">
         <div class="panel-head">
+          <h2>{{ store.isArabic ? 'الفروع والفرق' : 'Branches & teams' }}</h2>
+          <span class="muted">
+            {{ store.isArabic ? 'تجميع المستخدمين والعقارات والعملاء والصفقات داخل المستأجر' : 'Tenant-scoped grouping for users, properties, leads and deals' }}
+          </span>
+        </div>
+        <div class="hierarchy-grid">
+          <form class="hierarchy-form" @submit.prevent="onCreateBranch">
+            <h3>{{ store.isArabic ? 'فرع جديد' : 'New branch' }}</h3>
+            <label>
+              <span>{{ store.isArabic ? 'الاسم (إنجليزي)' : 'Name (English)' }}</span>
+              <input v-model="branchForm.name" type="text" maxlength="120" required />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'الاسم (عربي)' : 'Name (Arabic)' }}</span>
+              <input v-model="branchForm.nameAr" type="text" maxlength="120" dir="rtl" />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'الرمز' : 'Code' }}</span>
+              <input v-model="branchForm.code" type="text" maxlength="40" />
+            </label>
+            <button class="btn btn-primary" type="submit">{{ store.isArabic ? 'إضافة الفرع' : 'Add branch' }}</button>
+          </form>
+          <form class="hierarchy-form" @submit.prevent="onCreateTeam">
+            <h3>{{ store.isArabic ? 'فريق جديد' : 'New team' }}</h3>
+            <label>
+              <span>{{ store.isArabic ? 'الاسم (إنجليزي)' : 'Name (English)' }}</span>
+              <input v-model="teamForm.name" type="text" maxlength="120" required />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'الاسم (عربي)' : 'Name (Arabic)' }}</span>
+              <input v-model="teamForm.nameAr" type="text" maxlength="120" dir="rtl" />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'الفرع' : 'Branch' }}</span>
+              <select v-model="teamForm.branchId">
+                <option value="">{{ store.isArabic ? 'بدون فرع' : 'No branch' }}</option>
+                <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ localizedName(branch.name, branch.nameAr) }}</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" type="submit">{{ store.isArabic ? 'إضافة الفريق' : 'Add team' }}</button>
+          </form>
+        </div>
+        <div class="hierarchy-lists">
+          <div>
+            <h4>{{ store.isArabic ? 'الفروع' : 'Branches' }}</h4>
+            <ul>
+              <li v-for="branch in branches" :key="branch.id">
+                {{ localizedName(branch.name, branch.nameAr) }} <code>{{ branch.id }}</code>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4>{{ store.isArabic ? 'الفرق' : 'Teams' }}</h4>
+            <ul>
+              <li v-for="team in teams" :key="team.id">
+                {{ localizedName(team.name, team.nameAr) }} <code>{{ team.id }}</code>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <p v-if="hierarchyMessage" class="muted">{{ hierarchyMessage }}</p>
+      </section>
+
+      <section v-if="!fxOnly && store.canManage" class="card">
+        <div class="panel-head">
           <h2>{{ store.isArabic ? 'مصفوفة الأدوار والصلاحيات' : 'Role & permission matrix' }}</h2>
           <span class="muted">
             {{ store.isArabic ? 'الصلاحيات الفعّالة حسب الدور — للعرض فقط' : 'Effective permissions by role — read only' }}
@@ -350,6 +415,59 @@ const rawData = ref('{}')
 const fx = ref<ExchangeRateOverview | null>(null)
 const permissionMatrix = ref<PermissionMatrix>(DEFAULT_PERMISSION_MATRIX)
 
+interface HierarchyBranch {
+  id: string
+  name: string
+  nameAr: string | null
+  code: string | null
+}
+interface HierarchyTeam {
+  id: string
+  name: string
+  nameAr: string | null
+  branchId: string | null
+}
+const branches = ref<HierarchyBranch[]>([])
+const teams = ref<HierarchyTeam[]>([])
+const branchForm = reactive({ name: '', nameAr: '', code: '' })
+const teamForm = reactive({ name: '', nameAr: '', branchId: '' })
+const hierarchyMessage = ref('')
+function localizedName(name: string, nameAr: string | null): string {
+  return store.isArabic && nameAr ? nameAr : name
+}
+async function loadHierarchy(): Promise<void> {
+  const [branchResponse, teamResponse] = await Promise.all([
+    apiGet<HierarchyBranch[]>('/hierarchy/branches', { params: { limit: 100 } }),
+    apiGet<HierarchyTeam[]>('/hierarchy/teams', { params: { limit: 100 } })
+  ])
+  branches.value = branchResponse.data
+  teams.value = teamResponse.data
+  if (!teamForm.branchId && branches.value.length > 0) teamForm.branchId = branches.value[0].id
+}
+async function onCreateBranch(): Promise<void> {
+  try {
+    hierarchyMessage.value = ''
+    await apiPost('/hierarchy/branches', branchForm)
+    branchForm.name = ''
+    branchForm.nameAr = ''
+    branchForm.code = ''
+    await loadHierarchy()
+  } catch (error) {
+    hierarchyMessage.value = errorMessage(error)
+  }
+}
+async function onCreateTeam(): Promise<void> {
+  try {
+    hierarchyMessage.value = ''
+    await apiPost('/hierarchy/teams', teamForm)
+    teamForm.name = ''
+    teamForm.nameAr = ''
+    await loadHierarchy()
+  } catch (error) {
+    hierarchyMessage.value = errorMessage(error)
+  }
+}
+
 const whatsappTemplateKeys = [
   'propertyShare',
   'appointmentConfirmation',
@@ -410,7 +528,10 @@ onMounted(async () => {
       rateForm.fromCurrency = form.defaultCurrency
       rateForm.toCurrency = fx.value?.baseCurrency || form.defaultCurrency
     }
-    if (!props.fxOnly && store.canManage) await loadWhatsappTemplates()
+    if (!props.fxOnly && store.canManage) {
+      await loadWhatsappTemplates()
+      await loadHierarchy()
+    }
     if (!props.fxOnly && isAdmin()) await loadWebhooks()
   } catch (e) {
     isError.value = true
@@ -678,6 +799,13 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .state, .empty { padding: 2rem; text-align: center; color: #6b7280; }
 .table-scroll { overflow-x: auto; }
 .matrix-table { min-width: 1100px; }
+.hierarchy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.hierarchy-form { display: grid; gap: 0.65rem; padding: 0.9rem; border: 1px solid #e5e7eb; border-radius: 10px; }
+.hierarchy-form h3 { margin: 0; font-size: 0.95rem; }
+.hierarchy-form input, .hierarchy-form select { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.5rem 0.6rem; }
+.hierarchy-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+.hierarchy-lists ul { margin: 0; padding-inline-start: 1.1rem; font-size: 0.82rem; color: #374151; }
+.hierarchy-lists code { color: #6b7280; font-size: 0.72rem; }
 .matrix-table th:first-child, .matrix-table td:first-child { position: sticky; inset-inline-start: 0; background: #fff; }
 .permission-mark { display: inline-block; min-width: 1.4rem; text-align: center; border-radius: 999px; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
 .permission-mark.allowed { background: #dcfce7; color: #166534; }

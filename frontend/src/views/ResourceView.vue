@@ -138,13 +138,13 @@
         <table>
           <thead>
             <tr>
-              <th v-for="column in config.columns" :key="column.key">{{ column.label }}</th>
+              <th v-for="column in config.columns" :key="column.key">{{ store.isArabic && column.labelAr ? column.labelAr : column.label }}</th>
               <th class="actions-col">{{ store.isArabic ? 'إجراءات' : 'Actions' }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="String(row.id)">
-              <td v-for="column in config.columns" :key="column.key" :data-label="column.label">
+              <td v-for="column in config.columns" :key="column.key" :data-label="store.isArabic && column.labelAr ? column.labelAr : column.label">
                 <template v-if="(isAppointments || isDeals) && column.key === 'status'">
                   <span class="status-pill" :class="statusClass(String(row.status))">{{ readableStatus(String(row.status)) }}</span>
                 </template>
@@ -241,10 +241,12 @@
         <div class="modal-body">
           <label v-for="field in visibleFields" :key="field.key" :class="{ checkbox: field.type === 'checkbox' }">
             <template v-if="field.type !== 'checkbox'">
-              <span>{{ field.label }}{{ field.required ? ' *' : '' }}</span>
+              <span>{{ store.isArabic && field.labelAr ? field.labelAr : field.label }}{{ field.required ? ' *' : '' }}</span>
               <select v-if="field.type === 'select'" v-model="form[field.key]" :required="field.required">
                 <option value="">—</option>
-                <option v-for="option in field.options" :key="option" :value="option">{{ option }}</option>
+                <option v-for="(option, optionIndex) in field.options" :key="option" :value="option">
+                  {{ store.isArabic && field.optionsAr?.[optionIndex] ? field.optionsAr[optionIndex] : option }}
+                </option>
               </select>
               <textarea v-else-if="field.type === 'textarea'" v-model="form[field.key]" rows="3" :required="field.required"></textarea>
               <input
@@ -257,7 +259,7 @@
             </template>
             <template v-else>
               <input v-model="form[field.key]" type="checkbox" />
-              <span>{{ field.label }}</span>
+              <span>{{ store.isArabic && field.labelAr ? field.labelAr : field.label }}</span>
             </template>
           </label>
           <label v-if="showRecordExpense" class="checkbox record-expense">

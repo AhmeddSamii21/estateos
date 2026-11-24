@@ -14,6 +14,8 @@ import { notifyUsers, organizationRecipientIds } from '../services/notifications
 import { dispatchWebhookEvent } from '../services/webhookDispatcher'
 import { nullableDateValue } from '../utils/followUps'
 import { buildInstallmentSchedule, installmentPaymentReferences, type InstallmentFrequency } from '../utils/installmentSchedule'
+import { dealVisibility, teamVisibility } from '../utils/visibility'
+import { assertHierarchyRefs } from '../utils/hierarchy'
 import {
   assertValidLease,
   daysUntilLeaseEnd,
@@ -68,14 +70,14 @@ async function assertDealRelations(propertyId: string, userId: string, leadId: s
 }
 
 function canViewAllDeals(role: string | undefined): boolean {
-  return role === 'ADMIN' || role === 'MANAGER' || role === 'ACCOUNTANT'
+  return role === 'ADMIN' || role === 'MANAGER' || role === 'ACCOUNTANT' || role === Role.TEAM_LEAD
 }
 
 // Management may write any deal; agents may write only deals assigned to them.
 // Finance-only roles (ACCOUNTANT) can view deals but must not change commercial
 // terms, ownership, or lifecycle status.
 function canManageDeals(role: string | undefined): boolean {
-  return role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT'
+  return role === 'ADMIN' || role === 'MANAGER' || role === 'AGENT' || role === Role.TEAM_LEAD
 }
 
 router.get('/', async (req, res, next) => {
@@ -88,6 +90,11 @@ router.get('/', async (req, res, next) => {
     if (req.query.propertyId) where.propertyId = String(req.query.propertyId)
     if (req.query.userId) where.userId = String(req.query.userId)
     if (!canViewAllDeals(req.user?.role)) where.userId = userIdOf(req)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = dealVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
     if (req.query.search) {
       const search = String(req.query.search)
       where.OR = [
@@ -146,6 +153,11 @@ router.get('/lease-renewals', async (req, res, next) => {
       leaseEndAt: { not: null }
     }
     if (!canViewAllDeals(req.user?.role)) where.userId = userIdOf(req)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = dealVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
 
     const now = new Date()
     const deals = await prisma.deal.findMany({
@@ -183,8 +195,14 @@ router.get('/:id/checklist', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
     const id = String(req.params.id)
+    const where: Prisma.DealWhereInput = { id, organizationId, deletedAt: null }
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = dealVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
     const deal = await prisma.deal.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where,
       select: { id: true, organizationId: true, userId: true }
     })
     if (!deal) throw createError('Deal not found', 404)
@@ -260,14 +278,20 @@ router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
     const id = String(req.params.id)
+    const dealWhere: Prisma.DealWhereInput = { id, organizationId, deletedAt: null }
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = dealVisibility(visibilityContext)
+      dealWhere.AND = [...(Array.isArray(dealWhere.AND) ? dealWhere.AND : dealWhere.AND ? [dealWhere.AND] : []), clause]
+    }
     const existing = await prisma.deal.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: dealWhere,
       select: { id: true, organizationId: true, userId: true }
     })
     if (!existing) throw createError('Deal not found', 404)
     await ensureClosingChecklist(prisma, existing)
     const deal = await prisma.deal.findFirst({
-      where: { id, organizationId, deletedAt: null },
+      where: dealWhere,
       include: {
         property: {
           include: {
@@ -315,7 +339,10 @@ router.post('/', async (req, res, next) => {
     const propertyId = requiredString(req.body?.propertyId, 'propertyId', 100)
     const responsibleId = optionalString(req.body?.userId, 'userId', 100) || userId
     const leadId = optionalString(req.body?.leadId, 'leadId', 100)
+    const branchId = optionalString(req.body?.branchId, 'branchId', 100)
+    const teamId = optionalString(req.body?.teamId, 'teamId', 100)
     await assertDealRelations(propertyId, responsibleId, leadId, organizationId)
+    await assertHierarchyRefs(organizationId, branchId, teamId)
 
     const amount = parseMoney(req.body?.amount, 'amount', { required: true, min: 0 })!
     const currency = (optionalString(req.body?.currency, 'currency', 3) || 'USD').toUpperCase()
@@ -340,6 +367,8 @@ router.post('/', async (req, res, next) => {
           leadId,
           organizationId,
           userId: responsibleId,
+          branchId,
+          teamId,
           amount,
           currency,
           exchangeRate: conversion.exchangeRate,

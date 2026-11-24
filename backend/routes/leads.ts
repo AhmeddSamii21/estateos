@@ -15,6 +15,8 @@ import { followUpWhere, nullableDateValue, type FollowUpBucket } from '../utils/
 import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
 import { LEAD_IMPORT_FIELDS, leadImportData } from '../utils/leadImport'
 import { computeLeadPriority, LEAD_PRIORITY_TIERS } from '../utils/leadPriority'
+import { leadVisibility, propertyVisibility, teamVisibility } from '../utils/visibility'
+import { assertHierarchyRefs } from '../utils/hierarchy'
 
 const router = Router()
 router.use(authMiddleware)
@@ -147,6 +149,11 @@ router.get('/', async (req, res, next) => {
     const organizationId = organizationIdOf(req)
     const { page, limit, skip } = pagination(req.query as Record<string, unknown>)
     const where = scope(organizationId)
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = leadVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
     if (req.query.status) where.status = enumValue(req.query.status, 'status', Object.values(LeadStatus))
     // Package 15: dedicated source, budget-range and priority filters. Range
     // filters find leads whose budget overlaps the requested window rather
@@ -298,6 +305,11 @@ router.get('/:id/matches', async (req, res, next) => {
       status: PropertyStatus.AVAILABLE,
       ...(role === 'AGENT' ? { assignedAgentId: userIdOf(req) } : {})
     }
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = propertyVisibility(visibilityContext)
+      propertyWhere.AND = [...(Array.isArray(propertyWhere.AND) ? propertyWhere.AND : propertyWhere.AND ? [propertyWhere.AND] : []), clause]
+    }
 
     const criteria: Prisma.PropertyWhereInput[] = []
     if (lead.preferredType) criteria.push({ type: lead.preferredType })
@@ -425,8 +437,14 @@ router.post('/:id/recompute-priority', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
+    const where: Prisma.LeadWhereInput = { id: String(req.params.id), ...scope(organizationId) }
+    const visibilityContext = await teamVisibility(req)
+    if (visibilityContext) {
+      const clause = leadVisibility(visibilityContext)
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), clause]
+    }
     const lead = await prisma.lead.findFirst({
-      where: { id: String(req.params.id), ...scope(organizationId) },
+      where,
       include: {
         followUpNotes: {
           orderBy: { createdAt: 'desc' },
@@ -521,7 +539,10 @@ router.post('/', async (req, res, next) => {
     const body = req.body as Record<string, unknown>
     const assignedToId = optionalString(body.assignedToId, 'assignedToId', 100) || userIdOf(req)
     const propertyId = optionalString(body.propertyId, 'propertyId', 100)
+    const branchId = optionalString(body.branchId, 'branchId', 100)
+    const teamId = optionalString(body.teamId, 'teamId', 100)
     await assertAssignable(assignedToId, propertyId, organizationId)
+    await assertHierarchyRefs(organizationId, branchId, teamId)
     const criteria = parseLeadCriteria(body)
     const priority = computeLeadPriority({
       source: body.source,
@@ -558,6 +579,8 @@ router.post('/', async (req, res, next) => {
           preferredAreaMax: criteria.preferredAreaMax,
           assignedToId,
           propertyId,
+          branchId,
+          teamId,
           nextFollowUpAt: nullableDateValue(body.nextFollowUpAt, 'nextFollowUpAt')
         }
       })
@@ -652,6 +675,13 @@ router.patch('/:id', async (req, res, next) => {
       await assertAssignable(assignedToId, propertyId, organizationId)
       data.assignedTo = assignedToId ? { connect: { id: assignedToId } } : { disconnect: true }
       data.property = propertyId ? { connect: { id: propertyId } } : { disconnect: true }
+    }
+    if (body.branchId !== undefined || body.teamId !== undefined) {
+      const branchId = body.branchId === undefined ? undefined : optionalString(body.branchId, 'branchId', 100)
+      const teamId = body.teamId === undefined ? undefined : optionalString(body.teamId, 'teamId', 100)
+      await assertHierarchyRefs(organizationId, branchId, teamId)
+      data.branch = branchId === undefined ? undefined : branchId ? { connect: { id: branchId } } : { disconnect: true }
+      data.team = teamId === undefined ? undefined : teamId ? { connect: { id: teamId } } : { disconnect: true }
     }
 
     const lead = await prisma.$transaction(async (tx) => {

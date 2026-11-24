@@ -15,7 +15,7 @@ const orgSlug = process.env.DEMO_ORG_SLUG || 'estateos'
 const DEMO_MODELS = [
   'user', 'owner', 'property', 'propertyImage', 'propertyDocument', 'lead', 'leadNote',
   'deal', 'dealClosingChecklist', 'payment', 'expense', 'ownerPayout',
-  'appointment', 'maintenanceRequest'
+  'appointment', 'maintenanceRequest', 'branch', 'team'
 ]
 
 function digest(value) {
@@ -33,7 +33,7 @@ async function adminFingerprint(organizationId) {
 
 async function demoCounts(organizationId) {
   const counts = {}
-  const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest'])
+  const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team'])
   for (const model of DEMO_MODELS) {
     const where = { id: { startsWith: 'demo-' } }
     if (orgModels.has(model)) where.organizationId = organizationId
@@ -103,7 +103,9 @@ test('Package 24: demo seeding is idempotent and preserves existing ADMIN accoun
   assert.equal(afterSecond.ownerPayout, 3)
   assert.equal(afterSecond.appointment, 4)
   assert.equal(afterSecond.maintenanceRequest, 3)
-  assert.equal(afterSecond.user, 2)
+  assert.equal(afterSecond.user, 3)
+  assert.equal(afterSecond.branch, 1)
+  assert.equal(afterSecond.team, 1)
 
   for (const model of DEMO_MODELS) {
     assert.ok(afterSecond[model] >= beforeCounts[model], `${model} must never be removed`)
@@ -168,4 +170,34 @@ test('Package 24: seeded records are bilingual and cover the walkthrough scenari
 
   const appointments = await prisma.appointment.count({ where: { id: { startsWith: 'demo-appointment-' }, status: 'SCHEDULED' } })
   assert.equal(appointments, 4)
+
+  const branch = await prisma.branch.findUnique({
+    where: { id: 'demo-branch-main' },
+    select: { id: true, organizationId: true, nameAr: true }
+  })
+  const team = await prisma.team.findUnique({
+    where: { id: 'demo-team-sales' },
+    select: { id: true, organizationId: true, branchId: true, nameAr: true, leaderId: true }
+  })
+  const hierarchyUsers = await prisma.user.findMany({
+    where: { id: { startsWith: 'demo-user-' } },
+    select: { id: true, role: true, branchId: true, teamId: true }
+  })
+  const teamLead = hierarchyUsers.find((user) => user.id === 'demo-user-team-lead')
+  assert.equal(branch.organizationId, organization.id)
+  assert.match(branch.nameAr, /[\u0600-\u06FF]/)
+  assert.equal(team.organizationId, organization.id)
+  assert.equal(team.branchId, branch.id)
+  assert.match(team.nameAr, /[\u0600-\u06FF]/)
+  assert.equal(team.leaderId, teamLead?.id)
+  assert.equal(teamLead?.role, Role.TEAM_LEAD)
+  assert.equal(teamLead?.branchId, branch.id)
+  assert.equal(teamLead?.teamId, team.id)
+
+  const groupedCounts = {
+    property: await prisma.property.count({ where: { id: { startsWith: 'demo-property-' }, organizationId: organization.id, branchId: branch.id, teamId: team.id } }),
+    lead: await prisma.lead.count({ where: { id: { startsWith: 'demo-lead-' }, branchId: branch.id, teamId: team.id } }),
+    deal: await prisma.deal.count({ where: { id: { startsWith: 'demo-deal-' }, organizationId: organization.id, branchId: branch.id, teamId: team.id } })
+  }
+  assert.deepEqual(groupedCounts, { property: 4, lead: 5, deal: 3 })
 })

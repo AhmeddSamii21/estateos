@@ -65,7 +65,7 @@
           <router-link to="/owners" class="nav-link nav-child">
             <i class="fas fa-user-tie"></i><span>{{ t('Owners') }}</span>
           </router-link>
-          <router-link to="/users" class="nav-link nav-child">
+          <router-link v-if="store.canManage || store.user?.role === 'TEAM_LEAD'" to="/users" class="nav-link nav-child">
             <i class="fas fa-users"></i><span>{{ t('Users') }}</span>
           </router-link>
           <router-link to="/settings" class="nav-link nav-child">

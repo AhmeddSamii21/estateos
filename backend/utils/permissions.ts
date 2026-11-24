@@ -49,6 +49,18 @@ export const ROLE_PERMISSIONS: RolePermissionMatrix = {
     'deals.view': true,
     'deals.manage': true,
     'activity.view': true
+  },
+  // Package 27: same operational permissions as an agent, but the API scope
+  // is wider (own team + branch) and determined server-side.
+  [Role.TEAM_LEAD]: {
+    ...all(false),
+    'properties.view': true,
+    'properties.manage': true,
+    'leads.view': true,
+    'leads.manage': true,
+    'deals.view': true,
+    'deals.manage': true,
+    'activity.view': true
   }
 }
 

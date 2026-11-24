@@ -4,6 +4,8 @@ import { prisma } from '../prisma'
 import { authMiddleware, hashPassword, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { MANAGEMENT_ROLES, organizationIdOf, roleOf, userIdOf } from '../utils/scope'
+import { userVisibility, visibility } from '../utils/visibility'
+import { assertHierarchyRefs } from '../utils/hierarchy'
 import {
   booleanValue,
   enumValue,
@@ -28,12 +30,16 @@ function safeUser(user: {
   lastLoginAt?: Date | null
   loginCount?: number | null
   createdAt?: Date | null
+  branchId?: string | null
+  teamId?: string | null
 }) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
     organizationId: user.organizationId,
+    branchId: user.branchId ?? null,
+    teamId: user.teamId ?? null,
     accountStatus: user.accountStatus ?? undefined,
     statusReason: user.statusReason ?? undefined,
     firstName: user.firstName ?? null,
@@ -56,8 +62,12 @@ const select = {
   isActive: true,
   lastLoginAt: true,
   loginCount: true,
-  createdAt: true
+  createdAt: true,
+  branchId: true,
+  teamId: true
 } as const
+
+const USER_READ_ROLES: Role[] = [...MANAGEMENT_ROLES, Role.TEAM_LEAD]
 
 function assertManagerCannotManageAdmin(actorRole: Role | undefined, targetRole: Role): void {
   if (actorRole === Role.MANAGER && targetRole === Role.ADMIN) {
@@ -106,11 +116,15 @@ router.get('/me', async (req, res, next) => {
   }
 })
 
-router.get('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+router.get('/', requireRole(USER_READ_ROLES), async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
     const { page, limit, skip } = pagination(req.query as Record<string, unknown>)
     const where: Prisma.UserWhereInput = { organizationId, deletedAt: null }
+    if (roleOf(req) === Role.TEAM_LEAD) {
+      const scope = userVisibility(await visibility(req), 'id')
+      if (scope) Object.assign(where, scope)
+    }
 
     const [total, users] = await Promise.all([
       prisma.user.count({ where }),
@@ -126,10 +140,15 @@ router.get('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
   }
 })
 
-router.get('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+router.get('/:id', requireRole(USER_READ_ROLES), async (req, res, next) => {
   try {
     const organizationId = organizationIdOf(req)
-    const user = await prisma.user.findFirst({ where: { id: String(req.params.id), organizationId, deletedAt: null }, select })
+    const where: Prisma.UserWhereInput = { id: String(req.params.id), organizationId, deletedAt: null }
+    if (roleOf(req) === Role.TEAM_LEAD) {
+      const scope = userVisibility(await visibility(req), 'id')
+      if (scope) Object.assign(where, scope)
+    }
+    const user = await prisma.user.findFirst({ where, select })
     if (!user) throw createError('User not found', 404)
     res.json({ success: true, data: safeUser(user) })
   } catch (error) {
@@ -152,6 +171,9 @@ router.post('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
     }
     const firstName = optionalString(req.body?.firstName, 'firstName', 100)
     const isActive = booleanValue(req.body?.isActive, 'isActive', true)
+    const branchId = optionalString(req.body?.branchId, 'branchId', 100)
+    const teamId = optionalString(req.body?.teamId, 'teamId', 100)
+    await assertHierarchyRefs(organizationId, branchId, teamId)
 
     const user = await prisma.user.create({
       data: {
@@ -160,7 +182,9 @@ router.post('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
         role,
         firstName,
         isActive,
-        organizationId
+        organizationId,
+        branchId,
+        teamId
       },
       select
     })
@@ -208,6 +232,13 @@ router.patch('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
       if (accountStatus === AccountStatus.ACTIVE && body.statusReason === undefined) data.statusReason = null
     }
     if (body.statusReason !== undefined) data.statusReason = optionalString(body.statusReason, 'statusReason', 500)
+    if (body.branchId !== undefined || body.teamId !== undefined) {
+      const branchId = body.branchId === undefined ? undefined : optionalString(body.branchId, 'branchId', 100)
+      const teamId = body.teamId === undefined ? undefined : optionalString(body.teamId, 'teamId', 100)
+      await assertHierarchyRefs(organizationId, branchId, teamId)
+      data.branch = branchId === undefined ? undefined : branchId ? { connect: { id: branchId } } : { disconnect: true }
+      data.team = teamId === undefined ? undefined : teamId ? { connect: { id: teamId } } : { disconnect: true }
+    }
     if (body.password !== undefined) {
       const password = requiredString(body.password, 'password', 200)
       if (password.length < 8) throw createError('Password must be at least 8 characters', 400)

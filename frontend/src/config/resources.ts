@@ -1,8 +1,10 @@
 export interface FieldConfig {
   key: string
   label: string
+  labelAr?: string
   type: 'text' | 'number' | 'email' | 'password' | 'date' | 'datetime-local' | 'select' | 'textarea' | 'checkbox'
   options?: string[]
+  optionsAr?: string[]
   required?: boolean
   createOnly?: boolean
   default?: string | number | boolean
@@ -13,7 +15,7 @@ export interface ResourceConfig {
   title: string
   titleAr: string
   fields: FieldConfig[]
-  columns: { key: string; label: string; money?: boolean; date?: boolean }[]
+  columns: { key: string; label: string; labelAr?: string; money?: boolean; date?: boolean }[]
   deletable?: boolean
   deletableRoles?: string[]
 }
@@ -39,7 +41,8 @@ const expenseStatus = ['PENDING', 'PAID', 'CANCELLED']
 const commissionStatus = ['PENDING', 'APPROVED', 'PAID', 'CANCELLED']
 const maintenanceStatus = ['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
 const maintenancePriority = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
-const roles = ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT']
+const roles = ['ADMIN', 'MANAGER', 'AGENT', 'ACCOUNTANT', 'TEAM_LEAD']
+const rolesAr = ['مدير عام', 'مدير', 'وكيل', 'محاسب', 'قائد الفريق']
 
 export const resources: Record<string, ResourceConfig> = {
   leads: {
@@ -62,6 +65,8 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'preferredAreaMax', label: 'Preferred area max', type: 'number' },
       { key: 'propertyId', label: 'Property ID', type: 'text' },
       { key: 'assignedToId', label: 'Assigned user ID', type: 'text' },
+      { key: 'branchId', label: 'Branch ID', labelAr: 'معرّف الفرع', type: 'text' },
+      { key: 'teamId', label: 'Team ID', labelAr: 'معرّف الفريق', type: 'text' },
       { key: 'notes', label: 'Notes', type: 'textarea' },
       { key: 'lastContactedAt', label: 'Last contacted', type: 'datetime-local' },
       { key: 'nextFollowUpAt', label: 'Next follow-up', type: 'datetime-local' }
@@ -117,6 +122,8 @@ export const resources: Record<string, ResourceConfig> = {
       { key: 'propertyId', label: 'Property ID', type: 'text', required: true },
       { key: 'leadId', label: 'Lead ID', type: 'text' },
       { key: 'userId', label: 'User ID', type: 'text', required: true },
+      { key: 'branchId', label: 'Branch ID', labelAr: 'معرّف الفرع', type: 'text' },
+      { key: 'teamId', label: 'Team ID', labelAr: 'معرّف الفريق', type: 'text' },
       { key: 'amount', label: 'Amount', type: 'number', required: true },
       { key: 'currency', label: 'Currency', type: 'text', default: 'USD' },
       { key: 'exchangeRate', label: 'Historical exchange rate', type: 'number' },
@@ -251,18 +258,22 @@ export const resources: Record<string, ResourceConfig> = {
     title: 'Users',
     titleAr: 'المستخدمون',
     fields: [
-      { key: 'email', label: 'Email', type: 'email', required: true },
-      { key: 'password', label: 'Password', type: 'password', required: true, createOnly: true },
-      { key: 'firstName', label: 'First name', type: 'text' },
-      { key: 'role', label: 'Role', type: 'select', options: roles, default: 'AGENT' },
-      { key: 'isActive', label: 'Active', type: 'checkbox', default: true }
+      { key: 'email', label: 'Email', labelAr: 'البريد الإلكتروني', type: 'email', required: true },
+      { key: 'password', label: 'Password', labelAr: 'كلمة المرور', type: 'password', required: true, createOnly: true },
+      { key: 'firstName', label: 'First name', labelAr: 'الاسم الأول', type: 'text' },
+      { key: 'role', label: 'Role', labelAr: 'الدور', type: 'select', options: roles, optionsAr: rolesAr, default: 'AGENT' },
+      { key: 'branchId', label: 'Branch ID', labelAr: 'معرّف الفرع', type: 'text' },
+      { key: 'teamId', label: 'Team ID', labelAr: 'معرّف الفريق', type: 'text' },
+      { key: 'isActive', label: 'Active', labelAr: 'نشط', type: 'checkbox', default: true }
     ],
     columns: [
-      { key: 'email', label: 'Email' },
-      { key: 'firstName', label: 'First name' },
-      { key: 'role', label: 'Role' },
-      { key: 'isActive', label: 'Active' },
-      { key: 'lastLoginAt', label: 'Last login', date: true }
+      { key: 'email', label: 'Email', labelAr: 'البريد الإلكتروني' },
+      { key: 'firstName', label: 'First name', labelAr: 'الاسم الأول' },
+      { key: 'role', label: 'Role', labelAr: 'الدور' },
+      { key: 'branchId', label: 'Branch', labelAr: 'الفرع' },
+      { key: 'teamId', label: 'Team', labelAr: 'الفريق' },
+      { key: 'isActive', label: 'Active', labelAr: 'نشط' },
+      { key: 'lastLoginAt', label: 'Last login', labelAr: 'آخر دخول', date: true }
     ],
     deletable: false
   }

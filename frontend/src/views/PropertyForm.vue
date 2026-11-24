@@ -123,6 +123,14 @@
             <option v-for="owner in owners" :key="owner.id" :value="owner.id">{{ ownerLabel(owner) }}</option>
           </select>
         </label>
+        <label>
+          <span>{{ store.isArabic ? 'معرّف الفرع' : 'Branch ID' }}</span>
+          <input v-model="form.branchId" maxlength="100" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'معرّف الفريق' : 'Team ID' }}</span>
+          <input v-model="form.teamId" maxlength="100" />
+        </label>
       </div>
       <label class="full">
         <span>{{ store.isArabic ? 'الوصف' : 'Description' }}</span>
@@ -229,6 +237,8 @@ interface PropertyFormState {
   negotiable: boolean
   description: string
   ownerId: string
+  branchId: string
+  teamId: string
 }
 
 function emptyForm(): PropertyFormState {
@@ -236,7 +246,7 @@ function emptyForm(): PropertyFormState {
     title: '', referenceNumber: '', type: 'HOUSE', status: 'AVAILABLE', classification: 'SALE',
     price: '', currency: 'USD', city: '', state: '', country: '', postalCode: '', address: '',
     latitude: '', longitude: '', bedrooms: '0', bathrooms: '0', floors: '', area: '', areaUnit: 'SQ_M',
-    yearBuilt: '', condition: 'GOOD', occupancyStatus: '', negotiable: false, description: '', ownerId: ''
+    yearBuilt: '', condition: 'GOOD', occupancyStatus: '', negotiable: false, description: '', ownerId: '', branchId: '', teamId: ''
   }
 }
 
@@ -280,7 +290,9 @@ onMounted(async () => {
       occupancyStatus: property.occupancyStatus || '',
       negotiable: property.negotiable,
       description: property.description || '',
-      ownerId: property.ownerId || ''
+      ownerId: property.ownerId || '',
+      branchId: (property as { branchId?: string | null }).branchId || '',
+      teamId: (property as { teamId?: string | null }).teamId || ''
     })
   }
   loadingRecord.value = false
@@ -325,7 +337,9 @@ function applyDuplicateDraft(): void {
       occupancyStatus: text(draft.occupancyStatus),
       negotiable: draft.negotiable === true || draft.negotiable === 'true',
       description: text(draft.description),
-      ownerId: text(draft.ownerId)
+      ownerId: text(draft.ownerId),
+      branchId: text(draft.branchId),
+      teamId: text(draft.teamId)
     })
     duplicatePrefill.value = true
   } catch {
@@ -458,7 +472,9 @@ function payload(): Record<string, unknown> {
     occupancyStatus: form.occupancyStatus || undefined,
     negotiable: form.negotiable,
     description: form.description.trim() || undefined,
-    ownerId: form.ownerId || ''
+    ownerId: form.ownerId || '',
+    branchId: form.branchId.trim() || undefined,
+    teamId: form.teamId.trim() || undefined
   }
 }
 

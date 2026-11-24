@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'MANAGER' | 'AGENT' | 'ACCOUNTANT'
+export type Role = 'ADMIN' | 'MANAGER' | 'AGENT' | 'ACCOUNTANT' | 'TEAM_LEAD'
 export type MoneyValue = string | number
 
 export interface AuthUser {

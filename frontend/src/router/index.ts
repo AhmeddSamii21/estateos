@@ -37,8 +37,8 @@ const routes = [
       { path: 'owners', name: 'Owners', component: () => import('@/views/OwnersView.vue'), meta: { title: 'Owners', roles: ['ADMIN', 'MANAGER'] } },
       { path: 'notifications', name: 'Notifications', component: () => import('@/views/NotificationsView.vue'), meta: { title: 'Notifications' } },
       { path: 'activity', name: 'Activity', component: () => import('@/views/ActivityView.vue'), meta: { title: 'Activity' } },
-      { path: 'users', name: 'Users', component: () => import('@/views/ResourceView.vue'), props: { resource: 'users' }, meta: { title: 'Users', roles: ['ADMIN', 'MANAGER'] } },
-      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT'] } }
+      { path: 'users', name: 'Users', component: () => import('@/views/ResourceView.vue'), props: { resource: 'users' }, meta: { title: 'Users', roles: ['ADMIN', 'MANAGER', 'TEAM_LEAD'] } },
+      { path: 'settings', name: 'Settings', component: () => import('@/views/SettingsView.vue'), meta: { title: 'Settings', roles: ['ADMIN', 'MANAGER', 'ACCOUNTANT', 'TEAM_LEAD'] } }
     ]
   },
   { path: '/p/:shareToken', name: 'PublicProperty', component: () => import('@/views/PublicPropertyView.vue'), meta: { title: 'Property details' } },

@@ -11,12 +11,14 @@ datasource db {
 }
 
 // Roles are derived from the application requirements (Admin, Manager,
-// Agent, Accountant) and the existing User.role default (AGENT).
+// Agent, Accountant, Team Lead) and the existing User.role default (AGENT).
 enum Role {
   ADMIN
   MANAGER
   AGENT
   ACCOUNTANT
+  // Package 27: sees own records plus the records of their team and branch.
+  TEAM_LEAD
 }
 
 // Registration-approval lifecycle for user accounts.
@@ -227,6 +229,58 @@ model Organization {
   notifications Notification[]
   webhookEndpoints WebhookEndpoint[]
   webhookDeliveries WebhookDelivery[]
+  // Package 27: tenant-scoped team/branch hierarchy.
+  branches      Branch[]
+  teams         Team[]
+}
+
+// Package 27: a branch groups teams and users. All rows stay inside one tenant.
+model Branch {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  nameAr         String?
+  code           String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  teams        Team[]
+  users        User[]
+  properties   Property[]
+  leads        Lead[]
+  deals        Deal[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// Package 27: a team belongs to a branch and has an optional leader.
+model Team {
+  id             String    @id @default(uuid())
+  organizationId String
+  branchId       String?
+  name           String
+  nameAr         String?
+  leaderId       String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  branch       Branch?      @relation(fields: [branchId], references: [id])
+  leader       User?        @relation("TeamLeader", fields: [leaderId], references: [id])
+  members      User[]       @relation("TeamMembers")
+  properties   Property[]
+  leads        Lead[]
+  deals        Deal[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([branchId])
 }
 
 model Currency {
@@ -307,9 +361,18 @@ model User {
   webhookEndpointsCreated WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
   webhookEndpointsUpdated WebhookEndpoint[] @relation("WebhookEndpointUpdatedBy")
 
+  // Package 27: optional team/branch assignment. All existing users stay unassigned.
+  branchId       String?
+  teamId         String?
+  branch         Branch? @relation(fields: [branchId], references: [id])
+  team           Team?   @relation("TeamMembers", fields: [teamId], references: [id])
+  ledTeams       Team[]  @relation("TeamLeader")
+
   @@index([organizationId])
   @@index([role])
   @@index([accountStatus])
+  @@index([branchId])
+  @@index([teamId])
 }
 
 model Owner {
@@ -405,6 +468,9 @@ model Property {
   publicShareEnabled Boolean @default(false)
   publicShareExpiresAt DateTime?
   publicShareCreatedAt DateTime?
+  // Package 27: optional team/branch ownership for visibility grouping.
+  branchId        String?
+  teamId          String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -416,6 +482,9 @@ model Property {
 
   assignedAgentId String?
   assignedAgent   User?     @relation("AssignedAgentProperties", fields: [assignedAgentId], references: [id])
+
+  branch          Branch?   @relation(fields: [branchId], references: [id])
+  team            Team?     @relation(fields: [teamId], references: [id])
 
   images          PropertyImage[]
   documents       PropertyDocument[]
@@ -430,6 +499,8 @@ model Property {
   @@index([organizationId])
   @@index([ownerId])
   @@index([assignedAgentId])
+  @@index([branchId])
+  @@index([teamId])
   @@index([city])
   @@index([status])
   @@index([type])
@@ -516,6 +587,9 @@ model Lead {
   preferredAreaMax  Decimal?      @db.Decimal(12, 2)
   assignedToId      String?
   propertyId        String?
+  // Package 27: optional team/branch grouping for hierarchy visibility.
+  branchId          String?
+  teamId            String?
   // Follow-up tracking: next scheduled touchpoint and most recent contact.
   nextFollowUpAt    DateTime?
   lastContactedAt   DateTime?
@@ -530,6 +604,8 @@ model Lead {
 
   assignedTo     User?      @relation(fields: [assignedToId], references: [id])
   property       Property?  @relation(fields: [propertyId], references: [id])
+  branch         Branch?    @relation(fields: [branchId], references: [id])
+  team           Team?      @relation(fields: [teamId], references: [id])
   appointments   Appointment[]
   documents      Document[]
   deals          Deal[]
@@ -537,6 +613,8 @@ model Lead {
 
   @@index([assignedToId])
   @@index([propertyId])
+  @@index([branchId])
+  @@index([teamId])
   @@index([status])
   @@index([nextFollowUpAt])
   @@index([priorityScore])
@@ -594,6 +672,9 @@ model Deal {
   leadId         String?
   organizationId String
   userId         String
+  // Package 27: optional team/branch grouping for hierarchy visibility.
+  branchId       String?
+  teamId         String?
   amount         Decimal    @default(0) @db.Decimal(14, 2)
   currency       String     @default("USD")
   exchangeRate   Decimal?   @db.Decimal(20, 8)
@@ -619,6 +700,8 @@ model Deal {
   organization   Organization @relation(fields: [organizationId], references: [id])
   user           User         @relation(fields: [userId], references: [id])
   property       Property     @relation(fields: [propertyId], references: [id])
+  branch         Branch?      @relation(fields: [branchId], references: [id])
+  team           Team?        @relation(fields: [teamId], references: [id])
   payments       Payment[]
   commissions    Commission[]
   documents      Document[]
@@ -629,6 +712,8 @@ model Deal {
   @@index([organizationId])
   @@index([userId])
   @@index([propertyId])
+  @@index([branchId])
+  @@index([teamId])
   @@index([status])
   @@index([type, leaseEndAt])
 }

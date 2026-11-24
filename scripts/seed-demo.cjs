@@ -97,14 +97,14 @@ function computePriority(lead, now) {
 const DEMO_MODELS = [
   'user', 'owner', 'property', 'propertyImage', 'propertyDocument', 'lead', 'leadNote',
   'deal', 'dealClosingChecklist', 'payment', 'expense', 'ownerPayout',
-  'appointment', 'maintenanceRequest'
+  'appointment', 'maintenanceRequest', 'branch', 'team'
 ]
 
 async function demoCounts(organizationId) {
   const counts = {}
   for (const model of DEMO_MODELS) {
     const where = { id: { startsWith: 'demo-' } }
-    const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest'])
+    const orgModels = new Set(['user', 'owner', 'property', 'deal', 'ownerPayout', 'maintenanceRequest', 'branch', 'team'])
     if (orgModels.has(model)) where.organizationId = organizationId
     counts[model] = await prisma[model].count({ where })
   }
@@ -188,6 +188,40 @@ async function main() {
   const result = await prisma.$transaction(async (tx) => {
     const agent = await ensureUser(tx, organization.id, 'demo-user-agent', 'demo.agent@estateos.local', Role.AGENT, 'Demo Agent', DEMO_PASSWORD)
     const accountant = await ensureUser(tx, organization.id, 'demo-user-accountant', 'demo.accountant@estateos.local', Role.ACCOUNTANT, 'Demo Accountant', DEMO_PASSWORD)
+
+    // Package 27 demo hierarchy: one branch and one team with a team lead.
+    const branch = await tx.branch.upsert({
+      where: { id: 'demo-branch-main' },
+      create: {
+        id: 'demo-branch-main',
+        organizationId: organization.id,
+        name: 'Main Branch',
+        nameAr: 'الفرع الرئيسي',
+        code: 'MAIN'
+      },
+      update: {}
+    })
+    const teamLead = await ensureUser(tx, organization.id, 'demo-user-team-lead', 'demo.teamlead@estateos.local', Role.TEAM_LEAD, 'Demo Team Lead', DEMO_PASSWORD)
+    const team = await tx.team.upsert({
+      where: { id: 'demo-team-sales' },
+      create: {
+        id: 'demo-team-sales',
+        organizationId: organization.id,
+        branchId: branch.id,
+        name: 'Sales Team',
+        nameAr: 'فريق المبيعات',
+        leaderId: teamLead.id
+      },
+      update: { leaderId: teamLead.id }
+    })
+    await tx.user.update({
+      where: { id: teamLead.id },
+      data: { role: Role.TEAM_LEAD, branchId: branch.id, teamId: team.id }
+    })
+    await tx.user.update({
+      where: { id: agent.id },
+      data: { branchId: branch.id, teamId: team.id }
+    })
 
     const ownerSz = await ensureOwner(tx, organization.id, 'demo-owner-sz', 'demo.owner.sz@estateos.local', {
       companyName: 'Sheikh Zayed Holdings / شركة الشيخ زايد القابضة',
@@ -520,6 +554,21 @@ async function main() {
       }
     }
 
+    // Package 27 grouping is applied to the demo records as well so the seeded
+    // TEAM_LEAD can demonstrate branch/team visibility across every resource.
+    await tx.property.updateMany({
+      where: { id: { startsWith: 'demo-property-' }, organizationId: organization.id },
+      data: { branchId: branch.id, teamId: team.id }
+    })
+    await tx.lead.updateMany({
+      where: { id: { startsWith: 'demo-lead-' } },
+      data: { branchId: branch.id, teamId: team.id }
+    })
+    await tx.deal.updateMany({
+      where: { id: { startsWith: 'demo-deal-' }, organizationId: organization.id },
+      data: { branchId: branch.id, teamId: team.id }
+    })
+
     const expenseSpecs = [
       { id: 'demo-expense-sz-001', propertyId: propertyIds[0], dealId: dealSpecs[0].id, category: 'MAINTENANCE', amount: 3_800, description: 'EN: Lobby repaint. AR: إعادة طلاء اللوبي.' },
       { id: 'demo-expense-sz-002', propertyId: propertyIds[1], dealId: dealSpecs[1].id, category: 'LEGAL', amount: 6_200, description: 'EN: Contract review. AR: مراجعة العقد.' },
@@ -620,7 +669,7 @@ async function main() {
       })
     }
 
-    return { agent, accountant, admin }
+    return { agent, accountant, teamLead, branch, team, admin }
   })
 
   const afterCounts = await demoCounts(organization.id)
@@ -635,7 +684,8 @@ async function main() {
   const summary = {
     organization: { id: organization.id, name: organization.name, slug: organization.slug },
     admin: { id: result.admin.id, email: result.admin.email, unchanged: true },
-    demoUsers: [result.agent, result.accountant].map((user) => ({ id: user.id, email: user.email, role: user.role })),
+    demoUsers: [result.agent, result.accountant, result.teamLead].map((user) => ({ id: user.id, email: user.email, role: user.role })),
+    hierarchy: { branchId: result.branch.id, teamId: result.team.id },
     counts: { before: beforeCounts, after: afterCounts, created },
     adminFingerprint: afterAdmin
   }
