@@ -232,6 +232,10 @@ model Organization {
   // Package 27: tenant-scoped team/branch hierarchy.
   branches      Branch[]
   teams         Team[]
+  // Packages 35-36: referral partners and bilingual contract templates.
+  referralPartners ReferralPartner[]
+  referralSplits   ReferralSplit[]
+  contractTemplates ContractTemplate[]
 }
 
 // Package 27: a branch groups teams and users. All rows stay inside one tenant.
@@ -732,6 +736,8 @@ model Deal {
   expenses       Expense[]
   lead           Lead?      @relation(fields: [leadId], references: [id])
   closingChecklist DealClosingChecklist[]
+  // Package 35: partner referral splits attached to this deal.
+  referralSplits ReferralSplit[]
 
   @@index([organizationId])
   @@index([userId])
@@ -1036,4 +1042,92 @@ model WebhookDelivery {
   @@index([organizationId, status])
   @@index([organizationId, event])
   @@index([createdAt])
+}
+
+// Package 35: independent referral partners who can earn a split on a deal.
+// Every row is tenant-owned and soft-deletable so historical splits stay valid.
+model ReferralPartner {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  nameAr         String?
+  companyName    String?
+  email          String?
+  phone          String?
+  commissionRate Decimal   @default(10) @db.Decimal(5, 2)
+  notes          String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  splits       ReferralSplit[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+}
+
+enum ReferralSplitStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+// Package 35: one partner's split for one deal. Rate and amount are snapshotted
+// so later partner-rate edits never rewrite historical economics.
+model ReferralSplit {
+  id             String              @id @default(uuid())
+  organizationId String
+  dealId         String
+  partnerId      String
+  rate           Decimal             @db.Decimal(5, 2)
+  amount         Decimal             @db.Decimal(14, 2)
+  currency       String              @default("USD")
+  status         ReferralSplitStatus @default(PENDING)
+  notes          String?
+  approvedAt     DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  deal         Deal             @relation(fields: [dealId], references: [id])
+  partner      ReferralPartner  @relation(fields: [partnerId], references: [id])
+
+  @@unique([dealId, partnerId])
+  @@index([organizationId])
+  @@index([dealId])
+  @@index([partnerId])
+  @@index([status])
+}
+
+// Package 36: bilingual reusable contract wording with placeholder tokens.
+model ContractTemplate {
+  id             String                   @id @default(uuid())
+  organizationId String
+  name           String
+  nameAr         String?
+  language       ContractTemplateLanguage @default(BILINGUAL)
+  body           String
+  bodyAr         String?
+  version        Int                      @default(1)
+  isActive       Boolean                  @default(true)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([organizationId, isActive])
+}
+
+enum ContractTemplateLanguage {
+  EN
+  AR
+  BILINGUAL
 }

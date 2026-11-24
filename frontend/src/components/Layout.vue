@@ -68,6 +68,12 @@
           <router-link to="/owners" class="nav-link nav-child">
             <i class="fas fa-user-tie"></i><span>{{ t('Owners') }}</span>
           </router-link>
+          <router-link to="/referrals" class="nav-link nav-child">
+            <i class="fas fa-handshake-angle"></i><span>{{ t('Referrals') }}</span>
+          </router-link>
+          <router-link to="/contracts" class="nav-link nav-child">
+            <i class="fas fa-file-signature"></i><span>{{ t('Contracts') }}</span>
+          </router-link>
           <router-link v-if="store.canManage || store.user?.role === 'TEAM_LEAD'" to="/users" class="nav-link nav-child">
             <i class="fas fa-users"></i><span>{{ t('Users') }}</span>
           </router-link>

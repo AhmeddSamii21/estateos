@@ -908,3 +908,47 @@ export interface WebhookEndpointCreated {
   /** Raw signing secret, returned once and never available again. */
   secret: string
 }
+
+/** Package 35: tenant-owned referral partner. */
+export interface ReferralPartner {
+  id: string
+  organizationId: string
+  name: string
+  nameAr: string | null
+  companyName: string | null
+  email: string | null
+  phone: string | null
+  commissionRate: string
+  notes: string | null
+  isActive: boolean
+}
+
+/** Package 35: snapshotted partner split attached to a deal. */
+export interface ReferralSplit {
+  id: string
+  organizationId: string
+  dealId: string
+  partnerId: string
+  rate: string
+  amount: string
+  currency: string
+  status: 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED'
+  notes: string | null
+  approvedAt: string | null
+  paidAt: string | null
+  partnerName: string | null
+  dealReference: string | null
+}
+
+/** Package 36: reusable bilingual contract wording. */
+export interface ContractTemplate {
+  id: string
+  organizationId: string
+  name: string
+  nameAr: string | null
+  language: 'EN' | 'AR' | 'BILINGUAL'
+  body: string
+  bodyAr: string | null
+  version: number
+  isActive: boolean
+}
