@@ -14,6 +14,7 @@ dist-backend/
 # Local uploads, generated document storage, and placeholder fixtures
 storage/documents/
 uploads/
+backups/
 path/
 temp/
 tmp/

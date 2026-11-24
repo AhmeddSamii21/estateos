@@ -36,7 +36,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run all 142 automated tests (`node --test tests/**/*.test.js`) |
+| `npm test` | Run all 186 automated tests (`node --test tests/**/*.test.js`) |
 | `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
 | `npm run typecheck` | Type-check both backend and frontend without emitting files |
 | `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
@@ -45,7 +45,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 | `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
 | `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
 
-Current verification status: **142 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
+Current verification status: **186 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
 
 ## What the application does
 
@@ -53,10 +53,10 @@ Current verification status: **142 tests pass**, both typechecks pass, API compi
 - **Properties** — CRUD, reference numbers, classification (sale/rent), status transitions, agent assignment, image gallery, documents, activity history, advanced search/filtering, pagination, sorting, and a Leaflet map view with map-bounds filtering.
 - **Lead matching** — Leads carry seven criteria: `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`. `GET /api/leads/:id/matches` searches available, active, organization-scoped properties (agents see only their assigned properties), then scores candidates by budget, type, location, bedroom count and area. Each result includes a numeric score and human-readable reasons (for example "Budget fit", "Location match"); with no criteria the fallback is "Available property". The Leads screen exposes a **Matches** dialog and can convert a matched property into a deal.
 - **Deal workflow** — Deals move forward only: `DRAFT → PENDING → ACTIVE → COMPLETED`, with `CANCELLED` allowed from open stages and both terminal stages closed. New deals cannot be created in `COMPLETED` or `CANCELLED`; `COMPLETED` sets `closedAt`. Real stage changes notify managers once per transition and write audit entries. Deal detail shows payments, commissions, expenses, linked documents, historical FX data, and an organization-scoped audit trail.
-- **Finance** — Payments, expenses and commissions with decimal money handling, idempotency keys for payments, and approval/state rules.
+- **Finance** — Payments, expenses, commissions, owner payouts and payment aging with decimal money handling, idempotency keys and approval/state rules.
 - **CSV export** — Available on Properties, Reports and the generic resource lists. The shared `downloadCsv` helper writes UTF-8 with a BOM (Arabic headers stay readable in Excel), CRLF line endings, quoted/escaped cells, and neutralizes spreadsheet formula injection. Property export pages through all filtered results.
 - **Share summary** — On Property Details, **Share Property** builds a plain-text, client-ready summary from listing fields only (title, reference, price, status, specifications, location, images and description). Owner/agent records, deals, finances, audit/activity, operational notes and other internal notes are deliberately excluded. It copies to the clipboard with a read-only preview fallback, and calls `POST /api/properties/:id/share-summary` to record an activity/audit entry. Both English and Arabic summaries are supported.
-- **Other modules** — Owners, appointments, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings.
+- **Other modules** — Owners, appointments with advisory conflict warnings, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings.
 
 ## Delivery packages 5–10
 
@@ -67,25 +67,35 @@ Current verification status: **142 tests pass**, both typechecks pass, API compi
 - **Package 9** — completed maintenance can create one linked expense idempotently; funnel/SLA metrics with CSV export and uncontacted-lead reminders; a property status board with guarded quick transitions.
 - **Package 10** — per-endpoint in-memory rate limits with `429`/`Retry-After`, security headers and `X-Request-Id`, deep health checks, ADMIN-only snapshot export, a bounded-query audit and synced documentation.
 
-## Packages 11–23 — verified status (2026-11-24)
+## Delivery package status (2026-11-24)
 
-These packages were requested in sequence, but only some were implemented. This table records the **actual repository state**, not the intended scope of each brief.
+Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in this release. The table records the actual repository state.
 
-| Package | Status | What is actually present |
+| Package | Commit | Delivered capability |
 | --- | --- | --- |
-| 11 | Committed as `5a3c029` | Smoke coverage over real tenant-scoped GET endpoints (`tests/package11-smoke.test.js`), plus RTL/print polish. |
-| 12 | Committed as `5875bb8` | Authenticated upload/download/preview tests and storage-safety checks (`tests/package12-uploads.test.js`). |
-| 13 | Delivered | Dashboard bilingual date-range pills (7d/30d/90d/all) scope the cards, the summary API accepts `range`/`from`/`to`, responsive 768px tables and 44px touch targets were added to the linked views, and `tests/package13-dashboard-ux.test.js` covers the behavior. |
-| 14 | Partial | `PropertyImage` already carries `storageKey`, `caption`, `isPrimary`, `sortOrder` with a reorder endpoint and UI controls. No floorplan/brochure attachment model or UI exists. |
-| 15 | Partial | `Lead.source`, `budgetMin` and `budgetMax` exist and feed lead matching. There is no priority score field, source/budget list filter or dedicated qualification UI. |
-| 16 | Partial | Forward-only deal transitions, `closedAt` and audit/notification side effects exist. There is no closing checklist, override reason or stage guard based on checklist completion. |
-| 17 | Partial | Payment `dueAt`, installment schedules and decimal outstanding-balance math exist. There are no aging buckets or record-partial-payment actions. |
-| 18 | Partial | Owner statements and daily reminder deduplication exist. There is no owner payout/settlement marking or recurring maintenance interval/next-due tracking. |
-| 19 | Present (no dedicated commit) | Advisory overlap detection for the same assigned user/property, warning payloads on create/reschedule, and a list/agenda toggle with English/Arabic labels. Covered by `tests/appointments.test.js`. |
-| 20 | Not applicable | No Package 20 brief was issued in this session and no matching commit or code exists. |
-| 21 | Absent | A global `SearchModal` exists, but there is no Ctrl/Cmd+K command palette, recent-item actions or saved property filter presets. |
-| 22 | Absent | No webhook configuration, delivery log, URL allowlist or outbound delivery service exists. |
-| 23 | Release readiness | Full verification pass, UI hardening fixes, service restart/health checks, and this documentation sync. No new domain feature was added. |
+| 11 | `5a3c029` | Authenticated smoke coverage over tenant-scoped GET endpoints, RTL/print polish. |
+| 12 | `5875bb8` | Direct document/image upload, download, preview and storage-safety tests. |
+| 13 | `0aff7e4` | Dashboard date-range pills (`7d`/`30d`/`90d`/all), summary ranges and 768px/touch-target polish. |
+| 14 | `7fca507` | Property floorplans/brochures as typed attachments, public share display, reorder/cover controls. |
+| 15 | `7fca507` | Lead priority score/tier, recalculation endpoint, source/budget filters and priority sorting. |
+| 16 | `1d1b39c` | Deal closing checklist, documented override reason, forward-only stage guard and completion audit. |
+| 17 | `1d1b39c` | Payment aging buckets (`CURRENT`, `1_30_DAYS`, `31_60_DAYS`, `60_PLUS_DAYS`, `PAID`) and aging reports. |
+| 18 | `c1bb5ef` | Owner payout records/settlement and recurring maintenance intervals with next-due tracking. |
+| 19 | Present in baseline | Advisory appointment overlap warnings (`APPOINTMENT_CONFLICT`) plus list/agenda toggle. |
+| 20 | `c1bb5ef` | Frontend/backend permission matrix, bounded resource actions and UTF-8 BOM audit CSV export. |
+| 21 | `8d111ec` | Global Ctrl/Cmd+K command palette, recent-item actions and saved property filter presets. |
+| 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
+| 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
+| 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
+| 25 | Final consolidation commit | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+
+### Package 22 webhook contract
+
+Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/DELETE /api/webhooks/endpoints/:id`, `GET /api/webhooks/deliveries`, `GET /api/webhooks/deliveries/:id`, `POST /api/webhooks/deliveries/:id/retry`. Events are exactly `property.created`, `lead.created`, `deal.stage_changed` and `payment.recorded`. The raw `whsec_...` secret is returned only on creation; only its hash is stored. Signatures use `X-Webhook-Signature` and a server-side pepper. Private/local receiver URLs are allowed only when `NODE_ENV != production` and `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### Package 25 lifecycle coverage
+
+`tests/package25-e2e-lifecycle.test.js` runs against the compiled API and a local mocked receiver. It covers owner/property/share link, public property read, lead scoring/recompute/filtering, appointment conflict warnings, deal checklist/override/`COMPLETED` ("WON" equivalent), installments/payments/aging, commissions/statements, maintenance/expense/recurrence, owner statement/payout settlement, activity CSV and signed webhook delivery verification. All fixtures are tagged and removed in FK-safe order.
 
 ## Documentation
 

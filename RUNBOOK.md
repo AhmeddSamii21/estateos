@@ -6,10 +6,10 @@ This is the authoritative local setup and verification guide for the Vue 3 + Exp
 
 - PostgreSQL is reachable on port 5432; `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. Values are never printed here.
 - `npm run prisma:validate` passes; `npm run prisma:generate` regenerates Prisma Client 6.4.1.
-- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **142 tests**, and the production frontend build.
-- `npx prisma migrate status` reports **8 migrations found** and **Database schema is up to date**.
+- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **186 tests**, and the production frontend build.
+- `npx prisma migrate status` reports **12 migrations found** and **Database schema is up to date**.
 - The API runs on `http://localhost:3000`; the Vite frontend runs on `http://localhost:5173`. `GET /api/health` returns `200` both directly and through the Vite proxy, with `database.status: up`.
-- The repository is on `master`; `5a3c029` added Package 11, `5875bb8` added Package 12 and `0aff7e4` added Package 13. No remote push is performed.
+- The repository is on `master`. Packages 11-24 are committed through `86886b3`; Package 22 webhooks are in `d1b0a8b`. Package 25 is the final consolidation commit. No `origin` remote is configured, so no push is performed.
 
 ## 1. PostgreSQL role and database (needed only on a fresh machine)
 
@@ -72,8 +72,12 @@ Checked-in migrations, in order:
 | `20261123120000_package5_fx_share_reminders` | Managed FX rates, public share links and reminder fields | Applied |
 | `20261123130000_package6_followups_commissions_leases` | Lead follow-up notes, commission statements and lease renewal tracking | Applied |
 | `20261124000000_package8_9_imports_installments_expenses` | Import metadata, installment fields and maintenance-linked expenses | Applied |
+| `20261124110000_package14_15_attachments_lead_priority` | Typed property attachments and lead priority score/tier columns | Applied |
+| `20261124120000_package16_17_closing_checklist_aging` | Deal closing checklist/override fields and payment aging fields | Applied |
+| `20261124130000_package18_20_payouts_recurring` | Owner payouts, recurring maintenance metadata and audit export fields | Applied |
+| `20261124150000_package22_webhooks` | Webhook endpoint/delivery tables, event enum, indexes and FKs | Applied |
 
-`20261123000000_lead_match_criteria` was generated from an authoritative `prisma migrate diff` because this role cannot create a shadow database (P3014). Its SQL is additive: `ALTER TABLE "Lead" ADD COLUMN` for `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`, plus `ALTER COLUMN "updatedAt" DROP DEFAULT` on four tables. Existing rows keep their data. All eight checked-in migrations are now applied.
+`20261123000000_lead_match_criteria` was generated from an authoritative `prisma migrate diff` because this role cannot create a shadow database (P3014). Its SQL is additive: `ALTER TABLE "Lead" ADD COLUMN` for `budgetMin`, `budgetMax`, `preferredType`, `preferredCity`, `preferredBedrooms`, `preferredAreaMin`, `preferredAreaMax`, plus `ALTER COLUMN "updatedAt" DROP DEFAULT` on four tables. Existing rows keep their data. All twelve checked-in migrations are now applied.
 
 Apply any future migration with one of:
 
@@ -120,13 +124,13 @@ Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`; `C
 npm run verify
 ```
 
-This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **142 passed, 0 failed** from `node --test tests/**/*.test.js`.
+This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **186 passed, 0 failed** from `node --test tests/**/*.test.js`, including the Package 25 owner-to-webhook lifecycle suite.
 
-Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Note that `auth-state.test.js`, `deal-workflow.test.js` and `user-authorization.test.js` create organization/user fixtures through Prisma and therefore require a live, migrated database; the other suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures.
+Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, checklist/aging/payout/recurrence rules, webhook signing and SSRF guards, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Database-backed suites (`auth-state`, `deal-workflow`, `user-authorization`, Packages 11/13-18/20/22/24 and Package 25) start the API and require a live, migrated database; pure helper suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures in FK-safe order.
 
 ## Implemented feature notes
 
-- **Lead matching:** `GET /api/leads/:id/matches` scores available properties in the lead's organization by budget fit, property type, city/state/country/address substring, bedroom count (±1) and area range. Agents are limited to their assigned properties. Results carry a score plus reasons such as "Budget fit" and "Location match"; no criteria yields score 1 with "Available property". The Leads UI shows a Matches dialog and can convert a match into a deal. The seven criteria columns are exactly what the pending migration adds.
+- **Lead matching:** `GET /api/leads/:id/matches` scores available properties in the lead's organization by budget fit, property type, city/state/country/address substring, bedroom count (±1) and area range. Agents are limited to their assigned properties. Results carry a score plus reasons such as "Budget fit" and "Location match"; no criteria yields score 1 with "Available property". The Leads UI shows a Matches dialog and can convert a match into a deal. The seven criteria columns are applied by `20261123000000_lead_match_criteria`.
 - **Deal workflow:** Forward-only transitions `DRAFT → PENDING → ACTIVE → COMPLETED`, `CANCELLED` from open stages, terminal stages closed, `closedAt` set on completion. Genuine stage changes produce one manager notification per transition and audit rows; detail views show payments, commissions, expenses, documents, FX snapshots and an audit trail scoped to the current organization.
 - **Finance:** Visible to `ADMIN`, `MANAGER` and `ACCOUNTANT`; `AGENT` cannot open finance or report routes. Decimal arithmetic and 8-decimal commission rates keep stored amounts reproducible.
 - **CSV export:** Client-side `downloadCsv` used by Properties, Reports and generic resource lists. UTF-8 BOM for Arabic headers, CRLF, escaped cells, and spreadsheet formula-injection protection. Property export pages through every filtered result; other exports use the currently loaded rows.
@@ -144,23 +148,35 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 - **Package 9:** completing maintenance with a positive cost creates a single linked expense (`maintenanceRequestId` is unique). Reports expose funnel conversion and a 24-hour uncontacted-`NEW`-lead SLA with CSV export; reminders deduplicate by lead/day. Property list offers a Status Board with five columns and canonical transitions.
 - **Package 10:** login/register/public routes have dedicated in-memory limits returning `429` + `Retry-After`; all responses carry `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` and `X-Request-Id`, which is also logged on errors. `GET /api/health` probes PostgreSQL (`503` when down), reports uptime without secrets, and `GET /api/admin/export-snapshot` is ADMIN-only, tenant-scoped, paged and secret-free. List queries are audited for finite `take`. The only permitted exceptions are tenant-scoped ID lookups capped at 200 IDs and the ADMIN snapshot export, where `take`/`skip` are injected by the shared `paged()` helper.
 
-## Delivery packages 11–23 — verified status (2026-11-24)
+## Delivery package status (2026-11-24)
 
-| Package | Status | Notes |
+Packages 11-13 were earlier committed; Packages 14-25 are now consolidated in this release. The table records the actual repository state.
+
+| Package | Commit | Delivered capability |
 | --- | --- | --- |
-| 11 | Committed as `5a3c029` | `tests/package11-smoke.test.js` exercises real ADMIN/AGENT tenant-scoped GET routes without seeding or destructive cleanup. |
-| 12 | Committed as `5875bb8` | `tests/package12-uploads.test.js` covers authenticated document/image upload, download, preview, archive and storage-key safety. |
-| 13 | Delivered | Dashboard has bilingual 7d/30d/90d/all range pills that scope cards by `createdAt`; the summary API accepts `range`/`from`/`to`; 768px scroll wrappers and 44px controls were added to the linked views. `tests/package13-dashboard-ux.test.js` covers this behavior. |
-| 14 | Partial | Gallery metadata (`caption`, `isPrimary`, `sortOrder`), reorder endpoint and cover controls already exist. Floorplan/brochure attachments do not. |
-| 15 | Partial | `Lead.source`, `budgetMin`, `budgetMax` exist for matching. Priority score and dedicated list filters do not. |
-| 16 | Partial | Deal transition guardrails and audit notifications exist. Closing checklist and override reasons do not. |
-| 17 | Partial | `Payment.dueAt`, installment schedules and balance math exist. Aging buckets and record-payment helpers do not. |
-| 18 | Partial | Owner statements and per-day reminder dedupe exist. Owner payout settlement and recurring maintenance intervals do not. |
-| 19 | Present, no dedicated commit | Advisory appointment conflict warnings plus list/agenda toggle; covered by `tests/appointments.test.js`. |
-| 20 | Not applicable | No brief, commit or code for Package 20 in this session. |
-| 21 | Absent | No Ctrl/Cmd+K palette or saved property filter presets. |
-| 22 | Absent | No webhook config, delivery log or outbound delivery service. |
-| 23 | Release readiness | Verification fixes, service restart/health verification and docs sync; no new domain feature. |
+| 11 | `5a3c029` | Authenticated smoke coverage over tenant-scoped GET endpoints, RTL/print polish. |
+| 12 | `5875bb8` | Direct document/image upload, download, preview and storage-safety tests. |
+| 13 | `0aff7e4` | Dashboard date-range pills (`7d`/`30d`/`90d`/all), summary ranges and 768px/touch-target polish. |
+| 14 | `7fca507` | Property floorplans/brochures as typed attachments, public share display, reorder/cover controls. |
+| 15 | `7fca507` | Lead priority score/tier, recalculation endpoint, source/budget filters and priority sorting. |
+| 16 | `1d1b39c` | Deal closing checklist, documented override reason, forward-only stage guard and completion audit. |
+| 17 | `1d1b39c` | Payment aging buckets (`CURRENT`, `1_30_DAYS`, `31_60_DAYS`, `60_PLUS_DAYS`, `PAID`) and aging reports. |
+| 18 | `c1bb5ef` | Owner payout records/settlement and recurring maintenance intervals with next-due tracking. |
+| 19 | Present in baseline | Advisory appointment overlap warnings (`APPOINTMENT_CONFLICT`) plus list/agenda toggle. |
+| 20 | `c1bb5ef` | Frontend/backend permission matrix, bounded resource actions and UTF-8 BOM audit CSV export. |
+| 21 | `8d111ec` | Global Ctrl/Cmd+K command palette, recent-item actions and saved property filter presets. |
+| 22 | `d1b0a8b` | Tenant-scoped outbound webhooks, four event codes, signed deliveries, SSRF guard, retry/log UI. |
+| 23 | `e94e8fe` | Release-readiness documentation and service/health verification; no domain feature in that commit. |
+| 24 | `86886b3` | Idempotent bilingual demo seeder; a second run creates 0 rows. |
+| 25 | Final consolidation commit | Full owner-to-webhook lifecycle E2E test, final EN/AR/RTL/print/responsive sweep, docs and handover. |
+
+### Package 22 webhook contract
+
+Admin-only and organization-scoped: `GET/POST /api/webhooks/endpoints`, `PATCH/DELETE /api/webhooks/endpoints/:id`, `GET /api/webhooks/deliveries`, `GET /api/webhooks/deliveries/:id`, `POST /api/webhooks/deliveries/:id/retry`. Events are exactly `property.created`, `lead.created`, `deal.stage_changed` and `payment.recorded`. The raw `whsec_...` secret is returned only on creation; only its hash is stored. Signatures use `X-Webhook-Signature` and a server-side pepper. Private/local receiver URLs are allowed only when `NODE_ENV != production` and `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### Package 25 lifecycle coverage
+
+`tests/package25-e2e-lifecycle.test.js` runs against the compiled API and a local mocked receiver. It covers owner/property/share link, public property read, lead scoring/recompute/filtering, appointment conflict warnings, deal checklist/override/`COMPLETED` ("WON" equivalent), installments/payments/aging, commissions/statements, maintenance/expense/recurrence, owner statement/payout settlement, activity CSV and signed webhook delivery verification. All fixtures are tagged and removed in FK-safe order.
 
 Operational note: in-memory rate limits are per API process. Use shared storage or a gateway limit when running multiple instances. Snapshot export streams JSON only; never commit downloaded backups.
 
@@ -168,4 +184,4 @@ Operational note: in-memory rate limits are per API process. Use shared storage 
 
 - No credentials, passwords, full connection strings or secret values are printed by helper scripts or in this document.
 - No database data is deleted or reset by any script or migration here; `prisma migrate reset` is prohibited.
-- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads and temp fixtures. `.env` was never staged. Package 23 commits the verified working tree locally; it does not push or deploy.
+- Git is initialized with rules that exclude `node_modules`, build output, `.env`, local uploads, SQL backups under `backups/`, and temp fixtures. `.env` was never staged. The final Package 25 commit is local only; no `origin` remote is configured and no push or deploy is performed.
