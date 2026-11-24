@@ -612,11 +612,58 @@ export interface Owner {
   city?: string | null
   country?: string | null
   notes?: string | null
+  portalEnabled?: boolean
   isActive: boolean
   createdAt?: string
   updatedAt?: string
   properties?: Array<Pick<Property, 'id' | 'title' | 'referenceNumber' | 'status' | 'city' | 'price' | 'currency'>>
   _count?: { properties?: number }
+}
+
+export interface PublicOwnerPortalProperty {
+  referenceNumber: string
+  title: string
+  description: string | null
+  type: string
+  status: string
+  classification: string
+  address: string | null
+  city: string | null
+  state: string | null
+  country: string | null
+  postalCode: string | null
+  price: string | number | null
+  currency: string
+  bedrooms: number
+  bathrooms: number
+  floors: number | null
+  area: string | number | null
+  areaUnit: string
+  yearBuilt: number | null
+  condition: string
+  negotiable: boolean
+  availableFrom: string | null
+}
+
+export interface PublicOwnerPortal {
+  owner: {
+    displayName: string
+    city: string | null
+    country: string | null
+    organizationName: string | null
+  }
+  properties: PublicOwnerPortalProperty[]
+  summary: {
+    properties: number
+    deals: number
+    dealStatuses: Record<string, number>
+  }
+}
+
+export interface OwnerPortalLink {
+  enabled: boolean
+  token: string | null
+  url: string | null
 }
 
 export interface OwnerStatement {

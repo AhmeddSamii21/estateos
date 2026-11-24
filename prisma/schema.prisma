@@ -388,6 +388,10 @@ model Owner {
   country        String?
   notes          String?
   isActive       Boolean   @default(true)
+  // Package 28: revocable read-only owner portal token. The token is scoped
+  // to this owner's tenant and can be rotated or cleared at any time.
+  portalToken    String?   @unique
+  portalEnabled  Boolean   @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
@@ -400,6 +404,7 @@ model Owner {
   @@index([organizationId])
   @@index([email])
   @@index([isActive, deletedAt])
+  @@index([portalEnabled])
 }
 
 // Package 18: one settlement record per payout. Payouts never mutate the

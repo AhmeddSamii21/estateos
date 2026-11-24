@@ -20,3 +20,17 @@ export function buildPublicShareUrl(token: string, options: { publicAppUrl?: str
   if (origin) return `${origin}${path}`
   return path
 }
+
+/** Package 28: the matching read-only owner portal helpers. */
+export function ownerPortalPath(token: string): string {
+  return `/owner-portal/${encodeURIComponent(token)}`
+}
+
+export function buildOwnerPortalUrl(token: string, options: { publicAppUrl?: string; origin?: string } = {}): string {
+  const path = ownerPortalPath(token)
+  const base = options.publicAppUrl?.replace(/\/$/, '')
+  if (base) return `${base}${path}`
+  const origin = options.origin?.replace(/\/$/, '')
+  if (origin) return `${origin}${path}`
+  return path
+}

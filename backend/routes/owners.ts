@@ -1,6 +1,8 @@
-import { Router } from 'express'
+import { Router, type NextFunction, type Request, type Response } from 'express'
+import { randomBytes } from 'node:crypto'
 import { OwnerPayoutStatus, Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
+import { buildOwnerPortalUrl, isValidShareToken } from '../utils/share'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { FINANCE_ROLES, MANAGEMENT_ROLES, organizationIdOf, ownerReadScope, userIdOf } from '../utils/scope'
@@ -27,6 +29,40 @@ router.use(authMiddleware)
 function ownerLabel(owner: { firstName: string | null; lastName: string | null; companyName: string | null }): string | null {
   const person = [owner.firstName, owner.lastName].filter(Boolean).join(' ').trim()
   return owner.companyName || person || null
+}
+
+type OwnerLike = {
+  firstName: string | null
+  lastName: string | null
+  companyName: string | null
+  portalToken?: string | null
+}
+
+/** Package 28: never let the bearer portal token leak through owner APIs. */
+function safeOwner<T extends OwnerLike>(owner: T): Omit<T, 'portalToken'> & { displayName: string | null } {
+  const { portalToken, ...rest } = owner
+  void portalToken
+  return { ...rest, displayName: ownerLabel(owner) }
+}
+
+function portalUrl(token: string, req: Request): string {
+  return buildOwnerPortalUrl(token, {
+    publicAppUrl: process.env.PUBLIC_APP_URL,
+    origin: req.get('origin')
+  })
+}
+
+function portalLink(owner: { portalToken: string | null; portalEnabled: boolean }, req: Request) {
+  const active = Boolean(owner.portalEnabled && owner.portalToken && isValidShareToken(owner.portalToken))
+  return {
+    enabled: active,
+    token: active ? owner.portalToken : null,
+    url: active && owner.portalToken ? portalUrl(owner.portalToken, req) : null
+  }
+}
+
+function newPortalToken(): string {
+  return randomBytes(24).toString('base64url')
 }
 
 function ownerWhere(organizationId: string, query: Record<string, unknown>): Prisma.OwnerWhereInput {
@@ -297,7 +333,7 @@ router.get('/', async (req, res, next) => {
     ])
     res.json({
       success: true,
-      data: owners.map((owner) => ({ ...owner, displayName: ownerLabel(owner) })),
+      data: owners.map((owner) => safeOwner(owner)),
       pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     })
   } catch (error) {
@@ -320,7 +356,7 @@ router.get('/:id', async (req, res, next) => {
       }
     })
     if (!owner) throw createError('Owner not found', 404)
-    res.json({ success: true, data: { ...owner, displayName: ownerLabel(owner) } })
+    res.json({ success: true, data: safeOwner(owner) })
   } catch (error) {
     next(error)
   }
@@ -356,7 +392,7 @@ router.post('/', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
       })
       return created
     })
-    res.status(201).json({ success: true, data: { ...owner, displayName: ownerLabel(owner) }, message: 'Owner created successfully' })
+    res.status(201).json({ success: true, data: safeOwner(owner), message: 'Owner created successfully' })
   } catch (error) {
     next(error)
   }
@@ -396,7 +432,7 @@ router.patch('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
       })
       return record
     })
-    res.json({ success: true, data: { ...updated, displayName: ownerLabel(updated) }, message: 'Owner updated successfully' })
+    res.json({ success: true, data: safeOwner(updated), message: 'Owner updated successfully' })
   } catch (error) {
     next(error)
   }
@@ -410,7 +446,10 @@ router.delete('/:id', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
     if (!existing) throw createError('Owner not found', 404)
     // Preserve historical ownership links on properties/documents; only hide owner from active lists.
     await prisma.$transaction(async (tx) => {
-      await tx.owner.update({ where: { id }, data: { isActive: false } })
+      await tx.owner.update({
+        where: { id },
+        data: { isActive: false, portalEnabled: false, portalToken: null }
+      })
       await logAudit(tx, {
         userId: userIdOf(req),
         action: 'OWNER_ARCHIVED',
@@ -442,10 +481,111 @@ router.post('/:id/restore', requireRole(MANAGEMENT_ROLES), async (req, res, next
       })
       return restored
     })
-    res.json({ success: true, data: { ...owner, displayName: ownerLabel(owner) }, message: 'Owner restored successfully' })
+    res.json({ success: true, data: safeOwner(owner), message: 'Owner restored successfully' })
   } catch (error) {
     next(error)
   }
 })
+
+/**
+ * Package 28: manager-only lifecycle for the revocable read-only portal link.
+ * Every lookup uses findWritableOwner so a token can only be minted for an
+ * owner that belongs to the authenticated tenant.
+ */
+router.get('/:id/portal-link', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const owner = await findWritableOwner(String(req.params.id), organizationIdOf(req))
+    if (!owner) throw createError('Owner not found', 404)
+    res.json({ success: true, data: portalLink(owner, req) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const owner = await findWritableOwner(id, organizationIdOf(req))
+    if (!owner) throw createError('Owner not found', 404)
+    if (owner.portalEnabled && owner.portalToken && isValidShareToken(owner.portalToken)) {
+      return res.json({ success: true, data: portalLink(owner, req), message: 'Portal link is already active' })
+    }
+    const token = newPortalToken()
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.owner.update({
+        where: { id },
+        data: { portalToken: token, portalEnabled: true }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'OWNER_PORTAL_LINK_CREATED',
+        entityType: 'Owner',
+        entityId: id
+      })
+      return record
+    })
+    res.status(201).json({
+      success: true,
+      data: portalLink(updated, req),
+      message: 'Owner portal link created'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:id/portal-token/regenerate', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableOwner(id, organizationIdOf(req))) throw createError('Owner not found', 404)
+    const token = newPortalToken()
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.owner.update({
+        where: { id },
+        data: { portalToken: token, portalEnabled: true }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'OWNER_PORTAL_LINK_REGENERATED',
+        entityType: 'Owner',
+        entityId: id
+      })
+      return record
+    })
+    res.json({
+      success: true,
+      data: portalLink(updated, req),
+      message: 'Owner portal link regenerated'
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+async function revokePortalLink(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params.id)
+    if (!await findWritableOwner(id, organizationIdOf(req))) throw createError('Owner not found', 404)
+    const updated = await prisma.$transaction(async (tx) => {
+      const record = await tx.owner.update({
+        where: { id },
+        data: { portalEnabled: false, portalToken: null }
+      })
+      await logAudit(tx, {
+        userId: userIdOf(req),
+        action: 'OWNER_PORTAL_LINK_REVOKED',
+        entityType: 'Owner',
+        entityId: id
+      })
+      return record
+    })
+    res.json({ success: true, data: portalLink(updated, req), message: 'Owner portal link revoked' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+router.post('/:id/portal-token/revoke', requireRole(MANAGEMENT_ROLES), revokePortalLink)
+router.delete('/:id/portal-token', requireRole(MANAGEMENT_ROLES), revokePortalLink)
 
 export default router

@@ -222,4 +222,135 @@ router.get('/properties/:token/attachments/:attachmentId/content', async (req, r
   }
 })
 
+/**
+ * Package 28: read-only owner portal. The token itself is the capability, so
+ * only an explicitly enabled, active owner in an active tenant is resolved,
+ * and the response is allow-listed field by field. Owner notes, internal
+ * property notes, agent/branch assignments, documents, payouts and financial
+ * amounts are never queried here.
+ */
+router.get('/owner-portal/:token', async (req, res, next) => {
+  try {
+    const token = String(req.params.token || '').trim()
+    if (!isValidShareToken(token)) throw createError('Owner portal link not found', 404)
+    const owner = await prisma.owner.findFirst({
+      where: {
+        portalToken: token,
+        portalEnabled: true,
+        isActive: true,
+        deletedAt: null,
+        organizationId: { not: null },
+        organization: { isActive: true, deletedAt: null }
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        companyName: true,
+        city: true,
+        country: true,
+        organizationId: true,
+        organization: { select: { name: true } }
+      }
+    })
+    if (!owner?.organizationId) throw createError('Owner portal link not found', 404)
+
+    const properties = await prisma.property.findMany({
+      where: {
+        ownerId: owner.id,
+        organizationId: owner.organizationId,
+        isActive: true,
+        deletedAt: null
+        // Deliberately omit publicShareEnabled: the portal link grants its own
+        // read-only access to the owner's portfolio.
+      },
+      select: {
+        id: true,
+        referenceNumber: true,
+        title: true,
+        description: true,
+        type: true,
+        status: true,
+        classification: true,
+        address: true,
+        city: true,
+        state: true,
+        country: true,
+        postalCode: true,
+        price: true,
+        currency: true,
+        bedrooms: true,
+        bathrooms: true,
+        floors: true,
+        area: true,
+        areaUnit: true,
+        yearBuilt: true,
+        condition: true,
+        negotiable: true,
+        availableFrom: true
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 500
+    })
+    const propertyIds = properties.map((property) => property.id)
+    const deals = propertyIds.length
+      ? await prisma.deal.findMany({
+          where: {
+            organizationId: owner.organizationId,
+            propertyId: { in: propertyIds },
+            deletedAt: null
+          },
+          select: { status: true },
+          take: 5000
+        })
+      : []
+    const dealStatuses: Record<string, number> = {}
+    for (const deal of deals) dealStatuses[deal.status] = (dealStatuses[deal.status] || 0) + 1
+
+    const displayName = [owner.firstName, owner.lastName].filter(Boolean).join(' ').trim()
+    res.json({
+      success: true,
+      data: {
+        owner: {
+          displayName: owner.companyName || displayName || '',
+          city: owner.city,
+          country: owner.country,
+          organizationName: owner.organization?.name || null
+        },
+        properties: properties.map((property) => ({
+          referenceNumber: property.referenceNumber,
+          title: property.title,
+          description: property.description,
+          type: property.type,
+          status: property.status,
+          classification: property.classification,
+          address: property.address,
+          city: property.city,
+          state: property.state,
+          country: property.country,
+          postalCode: property.postalCode,
+          price: property.price,
+          currency: property.currency,
+          bedrooms: property.bedrooms,
+          bathrooms: property.bathrooms,
+          floors: property.floors,
+          area: property.area,
+          areaUnit: property.areaUnit,
+          yearBuilt: property.yearBuilt,
+          condition: property.condition,
+          negotiable: property.negotiable,
+          availableFrom: property.availableFrom
+        })),
+        summary: {
+          properties: properties.length,
+          deals: deals.length,
+          dealStatuses
+        }
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 export default router

@@ -40,6 +40,7 @@
             <td><span class="tag" :class="row.isActive ? 'active' : 'inactive'">{{ row.isActive ? (store.isArabic ? 'نشط' : 'Active') : (store.isArabic ? 'مؤرشف' : 'Archived') }}</span></td>
             <td class="actions-col">
               <button class="link" type="button" @click="openStatement(row)">{{ store.isArabic ? 'كشف الحساب' : 'Statement' }}</button>
+              <button v-if="store.canManage" class="link" type="button" @click="copyPortalLink(row)">{{ store.isArabic ? 'رابط البوابة' : 'Portal link' }}</button>
               <button class="link" type="button" @click="openDetails(row)">{{ store.isArabic ? 'عرض' : 'View' }}</button>
               <button v-if="store.canManage" class="link" type="button" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
               <button v-if="store.canManage && row.isActive" class="link danger" type="button" @click="archiveOwner(row)">{{ store.isArabic ? 'أرشفة' : 'Archive' }}</button>
@@ -93,6 +94,29 @@
           <p><strong>{{ store.isArabic ? 'الهاتف' : 'Phone' }}:</strong> {{ selected.phone || '—' }}</p>
           <p><strong>{{ store.isArabic ? 'الموقع' : 'Location' }}:</strong> {{ [selected.address, selected.city, selected.country].filter(Boolean).join(', ') || '—' }}</p>
           <p><strong>{{ store.isArabic ? 'الحالة' : 'Status' }}:</strong> {{ selected.isActive ? (store.isArabic ? 'نشط' : 'Active') : (store.isArabic ? 'مؤرشف' : 'Archived') }}</p>
+          <div v-if="store.canManage" class="full portal-panel">
+            <div class="payout-head">
+              <h3>{{ store.isArabic ? 'بوابة المالك' : 'Owner portal' }}</h3>
+              <span class="tag" :class="portalLink?.enabled ? 'active' : 'inactive'">
+                {{ portalLink?.enabled ? (store.isArabic ? 'مفعّلة' : 'Enabled') : (store.isArabic ? 'غير مفعّلة' : 'Disabled') }}
+              </span>
+            </div>
+            <p class="muted">
+              {{ store.isArabic ? 'رابط للقراءة فقط ويمكن إلغاؤه أو تجديده في أي وقت.' : 'Read-only link that can be revoked or rotated at any time.' }}
+            </p>
+            <div class="portal-actions">
+              <button class="btn btn-primary" type="button" :disabled="portalBusy" @click="copyPortalLink(selected)">
+                {{ store.isArabic ? 'نسخ الرابط' : 'Copy link' }}
+              </button>
+              <button class="btn btn-quiet" type="button" :disabled="portalBusy || !portalLink?.enabled" @click="regeneratePortalLink(selected)">
+                {{ store.isArabic ? 'تجديد الرابط' : 'Regenerate' }}
+              </button>
+              <button class="btn btn-quiet" type="button" :disabled="portalBusy || !portalLink?.enabled" @click="revokePortalLink(selected)">
+                {{ store.isArabic ? 'إلغاء الرابط' : 'Revoke' }}
+              </button>
+            </div>
+            <p v-if="portalMessage" class="muted">{{ portalMessage }}</p>
+          </div>
           <p v-if="selected.notes"><strong>{{ store.isArabic ? 'ملاحظات' : 'Notes' }}:</strong> {{ selected.notes }}</p>
           <div class="full">
             <h3>{{ store.isArabic ? 'العقارات المرتبطة' : 'Associated properties' }}</h3>
@@ -267,7 +291,7 @@ import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { useStore } from '@/stores'
 import { ownerStatementCsv } from '@/utils/ownerStatementCsv'
-import type { Owner, OwnerPayout, OwnerPayoutStatus, OwnerPayoutSummary, OwnerStatement } from '@/types'
+import type { Owner, OwnerPayout, OwnerPayoutStatus, OwnerPayoutSummary, OwnerPortalLink, OwnerStatement } from '@/types'
 
 const store = useStore()
 const printGeneratedAt = computed(() => new Date().toLocaleString(store.isArabic ? 'ar' : 'en'))
@@ -283,6 +307,9 @@ const includeInactive = ref(false)
 const page = ref(1)
 const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
 const selected = ref<Owner | null>(null)
+const portalLink = ref<OwnerPortalLink | null>(null)
+const portalBusy = ref(false)
+const portalMessage = ref('')
 const statementOpen = ref(false)
 const statementOwner = ref<Owner | null>(null)
 const statement = ref<OwnerStatement | null>(null)
@@ -390,6 +417,8 @@ async function save(): Promise<void> {
 
 async function openDetails(row: Owner): Promise<void> {
   selected.value = { ...row }
+  portalLink.value = null
+  portalMessage.value = ''
   payouts.value = []
   payoutSummary.value = null
   payoutFormOpen.value = false
@@ -398,6 +427,7 @@ async function openDetails(row: Owner): Promise<void> {
   try {
     const response = await apiGet<Owner>(`/owners/${row.id}`)
     selected.value = response.data
+    if (store.canManage) portalLink.value = (await apiGet<OwnerPortalLink>(`/owners/${row.id}/portal-link`)).data
   } catch (e) {
     store.error = errorMessage(e)
   } finally {
@@ -510,6 +540,71 @@ function exportStatementCsv(): void {
   URL.revokeObjectURL(url)
 }
 
+async function writeToClipboard(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const field = document.createElement('textarea')
+  field.value = value
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.appendChild(field)
+  field.select()
+  document.execCommand('copy')
+  field.remove()
+}
+
+async function copyPortalLink(owner: Owner): Promise<void> {
+  if (!store.canManage || portalBusy.value) return
+  portalBusy.value = true
+  try {
+    const cached = selected.value?.id === owner.id ? portalLink.value : null
+    const link = cached?.enabled && cached.url
+      ? cached
+      : (await apiPost<OwnerPortalLink>(`/owners/${owner.id}/portal-token`)).data
+    if (!link.url) throw new Error(store.isArabic ? 'تعذّر إنشاء رابط البوابة.' : 'Could not create the portal link.')
+    await writeToClipboard(link.url)
+    portalLink.value = link
+    portalMessage.value = store.isArabic ? 'تم نسخ الرابط.' : 'Link copied to clipboard.'
+    await load(page.value)
+  } catch (e) {
+    const message = errorMessage(e)
+    portalMessage.value = message
+    store.error = message
+  } finally {
+    portalBusy.value = false
+  }
+}
+
+async function regeneratePortalLink(owner: Owner): Promise<void> {
+  if (!store.canManage || portalBusy.value) return
+  portalBusy.value = true
+  try {
+    portalLink.value = (await apiPost<OwnerPortalLink>(`/owners/${owner.id}/portal-token/regenerate`)).data
+    portalMessage.value = store.isArabic ? 'تم تجديد الرابط. الرابط القدي لم يعد صالحاً.' : 'Link regenerated. The previous link no longer works.'
+    await load(page.value)
+  } catch (e) {
+    portalMessage.value = errorMessage(e)
+  } finally {
+    portalBusy.value = false
+  }
+}
+
+async function revokePortalLink(owner: Owner): Promise<void> {
+  if (!store.canManage || portalBusy.value) return
+  portalBusy.value = true
+  try {
+    portalLink.value = (await apiPost<OwnerPortalLink>(`/owners/${owner.id}/portal-token/revoke`)).data
+    portalMessage.value = store.isArabic ? 'تم إلغاء رابط البوابة.' : 'Portal link revoked.'
+    await load(page.value)
+  } catch (e) {
+    portalMessage.value = errorMessage(e)
+  } finally {
+    portalBusy.value = false
+  }
+}
+
 async function archiveOwner(row: Owner): Promise<void> {
   if (!window.confirm(store.isArabic ? 'أرشفة هذا المالك؟ لن تُحذف الروابط التاريخية.' : 'Archive this owner? Historical property links will be preserved.')) return
   try { await apiDeleteSafe(`/owners/${row.id}`); await load(page.value) } catch (e) { store.error = errorMessage(e) }
@@ -566,6 +661,8 @@ input, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem
 .pager button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer; }
 .prop-list { margin: 0; padding-inline-start: 1.2rem; display: flex; flex-direction: column; gap: 0.35rem; }
 .prop-list a { color: #4f46e5; text-decoration: none; }
+.portal-panel { border: 1px solid #e0e7ff; border-radius: 10px; padding: 0.8rem; background: #f8faff; display: flex; flex-direction: column; gap: 0.5rem; }
+.portal-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .payouts { border-top: 1px solid #eef2f7; padding-top: 0.9rem; }
 .payout-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .payout-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; background: #f9fafb; border-radius: 10px; padding: 0.8rem; margin: 0.7rem 0; }

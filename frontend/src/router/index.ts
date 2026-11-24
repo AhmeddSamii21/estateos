@@ -42,6 +42,7 @@ const routes = [
     ]
   },
   { path: '/p/:shareToken', name: 'PublicProperty', component: () => import('@/views/PublicPropertyView.vue'), meta: { title: 'Property details' } },
+  { path: '/owner-portal/:token', name: 'OwnerPortal', component: () => import('@/views/OwnerPortalView.vue'), meta: { title: 'Owner portal' } },
   { path: '/:catchAll(.*)', name: 'NotFound', component: () => import('@/views/NotFound.vue'), meta: { title: 'Not Found' } }
 ]
 
