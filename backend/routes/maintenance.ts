@@ -8,9 +8,21 @@ import { dateValue, enumValue, optionalString, pagination, requiredString } from
 import { parseMoney } from '../utils/money'
 import { logAudit, logPropertyActivity } from '../utils/audit'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
+import {
+  linkedExpenseSummary,
+  maintenanceExpenseData,
+  maintenanceExpenseWhere,
+  shouldRecordMaintenanceExpense
+} from '../utils/maintenanceExpense'
 
 const router = Router()
 router.use(authMiddleware)
+
+const linkedExpenseSelect = { id: true, status: true, amount: true, currency: true } as const
+
+function withExpenseSummary<T extends { expense?: { id: string; status: string; amount: Prisma.Decimal; currency: string } | null }>(row: T) {
+  return { ...row, ...linkedExpenseSummary(row.expense) }
+}
 
 const TRANSITIONS: Record<MaintenanceStatus, MaintenanceStatus[]> = {
   [MaintenanceStatus.OPEN]: [MaintenanceStatus.IN_PROGRESS, MaintenanceStatus.CANCELLED],
@@ -53,11 +65,12 @@ router.get('/', async (req, res, next) => {
         include: {
           property: { select: { id: true, title: true, referenceNumber: true } },
           assignedTo: { select: { id: true, email: true, firstName: true } },
-          createdBy: { select: { id: true, email: true, firstName: true } }
+          createdBy: { select: { id: true, email: true, firstName: true } },
+          expense: { select: linkedExpenseSelect }
         }
       })
     ])
-    res.json({ success: true, data: requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+    res.json({ success: true, data: requests.map(withExpenseSummary), pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
   } catch (error) {
     next(error)
   }
@@ -73,11 +86,12 @@ router.get('/:id', async (req, res, next) => {
       include: {
         property: true,
         assignedTo: { select: { id: true, email: true, firstName: true } },
-        createdBy: { select: { id: true, email: true, firstName: true } }
+        createdBy: { select: { id: true, email: true, firstName: true } },
+        expense: { select: linkedExpenseSelect }
       }
     })
     if (!request) throw createError('Maintenance request not found', 404)
-    res.json({ success: true, data: request })
+    res.json({ success: true, data: withExpenseSummary(request) })
   } catch (error) {
     next(error)
   }
@@ -141,6 +155,10 @@ router.patch('/:id', async (req, res, next) => {
     const id = String(req.params.id)
     const existing = await prisma.maintenanceRequest.findFirst({ where: { id, organizationId, deletedAt: null } })
     if (!existing) throw createError('Maintenance request not found', 404)
+    const existingExpense = await prisma.expense.findFirst({
+      where: maintenanceExpenseWhere(id),
+      select: linkedExpenseSelect
+    })
 
     const isAgent = req.user?.role === 'AGENT'
     if (isAgent && existing.assignedToId !== userId) {
@@ -184,6 +202,31 @@ router.patch('/:id', async (req, res, next) => {
         details: { requestId: id, before: existing.status, after: status }
       })
       await logAudit(tx, { userId, action: 'MAINTENANCE_UPDATED', entityType: 'MaintenanceRequest', entityId: id, details: { before: existing.status, after: status } })
+
+      const costForExpense = updated.cost
+      const currencyForExpense = updated.currency
+      if (shouldRecordMaintenanceExpense({
+        status,
+        cost: costForExpense,
+        recordExpense: body.recordExpense,
+        linkedExpenseId: existingExpense?.id
+      })) {
+        const expense = await tx.expense.create({
+          data: maintenanceExpenseData({
+            id,
+            propertyId: existing.propertyId,
+            title: updated.title,
+            cost: costForExpense,
+            currency: currencyForExpense,
+            completedAt: updated.completedAt || new Date(),
+            assignedToId: updated.assignedToId,
+            notes: updated.notes
+          })
+        })
+        await logAudit(tx, { userId, action: 'MAINTENANCE_EXPENSE_CREATED', entityType: 'Expense', entityId: expense.id, details: { maintenanceRequestId: id, amount: expense.amount.toString(), currency: expense.currency } })
+      }
+
+      const linkedExpense = await tx.expense.findFirst({ where: maintenanceExpenseWhere(id), select: linkedExpenseSelect })
       const recipients = await organizationRecipientIds(tx, organizationId, {
         roles: ['ADMIN', 'MANAGER'],
         includeUserIds: [updated.assignedToId || '', existing.assignedToId || ''],
@@ -202,7 +245,7 @@ router.patch('/:id', async (req, res, next) => {
           metadata: { beforeStatus: existing.status, afterStatus: status, beforeAssignee: existing.assignedToId, afterAssignee: updated.assignedToId }
         })
       }
-      return updated
+      return withExpenseSummary({ ...updated, expense: linkedExpense })
     })
     res.json({ success: true, data: request, message: 'Maintenance request updated successfully' })
   } catch (error) {

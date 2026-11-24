@@ -1,5 +1,6 @@
 import { AccountStatus, Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
+import { resolveNotificationTarget } from '../utils/notificationTargets'
 
 export type NotificationClient = Prisma.TransactionClient | typeof prisma
 
@@ -41,8 +42,18 @@ export async function createNotifications(
   inputs: NotificationInput[]
 ): Promise<number> {
   if (!inputs.length) return 0
+  // Every stored actionUrl passes through the frontend allowlist before
+  // dedupe, so no caller can persist an arbitrary or unsafe navigation target.
+  const safeInputs: NotificationInput[] = inputs.map((input) => ({
+    ...input,
+    actionUrl: resolveNotificationTarget({
+      actionUrl: input.actionUrl,
+      entityType: input.entityType,
+      entityId: input.entityId
+    })
+  }))
   const deduped = new Map<string, NotificationInput>()
-  for (const input of inputs) {
+  for (const input of safeInputs) {
     if (!input.userId) continue
     deduped.set(keyOf(input), input)
   }
@@ -69,6 +80,7 @@ export async function createNotifications(
       OR: conditions,
       createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) }
     },
+    take: 1000,
     select: {
       userId: true,
       organizationId: true,
@@ -125,6 +137,7 @@ export async function organizationRecipientIds(
         accountStatus: AccountStatus.ACTIVE,
         role: { in: options.roles as never }
       },
+      take: 1000,
       select: { id: true }
     })
     for (const user of users) ids.add(user.id)

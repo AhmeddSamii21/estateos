@@ -526,6 +526,46 @@ export interface Owner {
   _count?: { properties?: number }
 }
 
+export interface OwnerStatement {
+  owner: { id: string; displayName: string | null }
+  generatedAt: string
+  properties: {
+    count: number
+    activeCount: number
+    byStatus: Record<string, number>
+    list: Array<{
+      id: string
+      title: string
+      referenceNumber: string
+      status: string
+      city: string | null
+      price?: MoneyValue
+      currency?: string | null
+    }>
+  }
+  deals: { count: number; byStatus: Record<string, number>; byType: Record<string, number> }
+  financialsRestricted: boolean
+  financials?: {
+    currencies: Array<{
+      currency: string
+      properties: { count: number; listedValue: string }
+      deals: { count: number; amount: string }
+      payments: { count: number; collected: string }
+      expenses: { count: number; paid: string }
+      net: string
+    }>
+  }
+}
+
+export interface PriceHistoryEntry {
+  id: string
+  timestamp: string
+  oldPrice: string
+  oldCurrency: string
+  newPrice: string
+  newCurrency: string
+}
+
 export interface ActivityEntityInfo {
   id: string
   label: string

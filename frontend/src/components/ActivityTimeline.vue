@@ -62,7 +62,7 @@
           <p v-else class="actor">{{ store.isArabic ? 'نظام' : 'System' }}</p>
           <ul v-if="entry.changes.length" class="changes">
             <li v-for="change in entry.changes" :key="change.field">
-              <span class="field">{{ change.field }}</span>
+              <span class="field">{{ fieldLabel(change.field) }}</span>
               <template v-if="change.before !== undefined || change.after !== undefined">
                 <span class="old">{{ display(change.before) }}</span>
                 <span aria-hidden="true">→</span>
@@ -130,6 +130,7 @@ const ACTION_LABELS: Record<string, [string, string]> = {
   PROPERTY_ARCHIVED: ['Property archived', 'تم أرشفة العقار'],
   PROPERTY_RESTORED: ['Property restored', 'تمت استعادة العقار'],
   PROPERTY_STATUS_CHANGED: ['Property status changed', 'تغيرت حالة العقار'],
+  PROPERTY_PRICE_CHANGED: ['Property price changed', 'تغير سعر العقار'],
   PROPERTY_ASSIGNED: ['Property assigned', 'تم إسناد العقار'],
   PROPERTY_IMAGES_UPLOADED: ['Property images uploaded', 'تم رفع صور العقار'],
   PROPERTY_SHARE_SUMMARY_GENERATED: ['Client share summary generated', 'تم إنشاء ملخص المشاركة للعميل'],
@@ -173,7 +174,15 @@ const WORD_LABELS: Record<string, string> = {
   PAYMENT: 'دفعة', RECORDED: 'تسجيل', EXPENSE: 'مصروف', COMMISSION: 'عمولة', CONFIGURED: 'تحديد',
   MAINTENANCE: 'صيانة', REQUEST: 'طلب', DOCUMENT: 'وثيقة', UPLOADED: 'رفع',
   SHARE: 'مشاركة', SUMMARY: 'ملخص', GENERATED: 'إنشاء',
+  PRICE: 'سعر', CURRENCY: 'عملة', OLD: 'قديم', NEW: 'جديد',
   OWNER: 'مالك', LEAD: 'عميل محتمل', APPOINTMENT: 'موعد', DELETED: 'حذف'
+}
+
+const FIELD_LABELS: Record<string, [string, string]> = {
+  price: ['Price', 'السعر'],
+  currency: ['Currency', 'العملة'],
+  before: ['Before', 'قبل'],
+  after: ['After', 'بعد']
 }
 
 function readable(value: string): string {
@@ -190,6 +199,12 @@ function actionLabel(action: string): string {
 
 function entityLabel(type: string): string {
   return store.isArabic ? ENTITY_LABELS[type] || type : readable(type)
+}
+
+function fieldLabel(field: string): string {
+  const known = FIELD_LABELS[field]
+  if (known) return store.isArabic ? known[1] : known[0]
+  return store.isArabic ? (WORD_LABELS[field.toUpperCase()] || field) : readable(field)
 }
 
 function formatDate(value: string): string {

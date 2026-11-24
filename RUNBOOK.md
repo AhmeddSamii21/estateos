@@ -7,7 +7,7 @@ This is the authoritative local setup and verification guide for the Vue 3 + Exp
 - PostgreSQL 18.7 is installed; service `postgresql-x64-18` is Running/Automatic and TCP port 5432 is listening.
 - `node scripts/verify-db.cjs` reports `DB_CONNECT=OK`, `SELECT_1=OK`, `ROLE_estateos_app=PRESENT`, `DB_estateos_db=PRESENT`. The earlier `P1000` credential blocker is resolved; values are never printed here.
 - `npm run prisma:validate` passes; `npm run prisma:generate` regenerates Prisma Client 6.4.1.
-- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **77 tests**, and the production frontend build.
+- `npm run verify` passes: schema validation, both TypeScript checks, API compilation, **131 tests**, and the production frontend build.
 - `npx prisma migrate status` reports **5 migrations found; 1 not yet applied**: `20261123000000_lead_match_criteria`. The first four are applied. The new migration is present in the repository but was intentionally **not** applied as part of this documentation package.
 - The repository has been initialized with Git. No commit or push has been made.
 
@@ -117,7 +117,7 @@ Open `http://localhost:5173`. Vite proxies `/api` to `http://localhost:3000`; `C
 npm run verify
 ```
 
-This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **77 passed, 0 failed** from `node --test tests/**/*.test.js`.
+This runs `prisma validate`, both TypeScript checks, `build:api`, `npm test` and `build`. Current result: **131 passed, 0 failed** from `node --test tests/**/*.test.js`.
 
 Coverage includes API guard behavior, password hashing, validation helpers, money and historical FX math, decimal commission math, payment balance rules, property status transitions, lead matching, deal workflow, search query building, document filename/storage-key safety, file validation, authentication state, and user authorization. Note that `auth-state.test.js`, `deal-workflow.test.js` and `user-authorization.test.js` create organization/user fixtures through Prisma and therefore require a live, migrated database; the other suites are offline-safe. Every database-backed suite cleans up its own tagged fixtures.
 
@@ -131,6 +131,17 @@ Coverage includes API guard behavior, password hashing, validation helpers, mone
 - **Documents:** Stored outside the public web root under `UPLOAD_PATH` (default `./storage/documents`) and served through authenticated downloads. Delete means archive; restore is supported. Create/mount that directory with write access before uploading.
 - **Search and map:** Advanced search supports keyword, location, price, size, room counts, availability, sorting, pagination and map-bounds filtering using Leaflet with OpenStreetMap tiles. No paid map key is required.
 - Maintenance requests, property status changes and document/archive actions write audit records where applicable.
+
+## Delivery packages 5–10
+
+- **Package 5:** CSV export (BOM, CRLF, escaping, formula-injection protection), including paginated property exports.
+- **Package 6:** lead follow-up buckets, lease renewal reminders and consolidated commission statements with FX history.
+- **Package 7:** owner statements, property price history, duplication sanitizer and share summaries.
+- **Package 8:** `POST /api/properties/import` and `POST /api/leads/import` validate up to 500 CSV rows (dry-run by default) before a single transaction; `POST /api/deals/:id/installments` builds paged `Payment` rows with `dueAt`; notification lists and the header dropdown accept `?category=` and only navigate through an explicit frontend target allowlist.
+- **Package 9:** completing maintenance with a positive cost creates a single linked expense (`maintenanceRequestId` is unique). Reports expose funnel conversion and a 24-hour uncontacted-`NEW`-lead SLA with CSV export; reminders deduplicate by lead/day. Property list offers a Status Board with five columns and canonical transitions.
+- **Package 10:** login/register/public routes have dedicated in-memory limits returning `429` + `Retry-After`; all responses carry `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` and `X-Request-Id`, which is also logged on errors. `GET /api/health` probes PostgreSQL (`503` when down), reports uptime without secrets, and `GET /api/admin/export-snapshot` is ADMIN-only, tenant-scoped, paged and secret-free. List queries are audited for finite `take`. The only permitted exceptions are tenant-scoped ID lookups capped at 200 IDs and the ADMIN snapshot export, where `take`/`skip` are injected by the shared `paged()` helper.
+
+Operational note: in-memory rate limits are per API process. Use shared storage or a gateway limit when running multiple instances. Snapshot export streams JSON only; never commit downloaded backups.
 
 ## Safety notes
 

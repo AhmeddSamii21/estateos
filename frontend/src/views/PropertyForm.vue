@@ -4,6 +4,10 @@
 
     <div v-if="loadingRecord" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
 
+    <div v-if="duplicatePrefill" class="notice">
+      {{ store.isArabic ? 'تم تعبئة البيانات من العقار الأصلي. راجع العنوان والسعر قبل الحفظ.' : 'Prefilled from the source property. Review the title and price before saving.' }}
+    </div>
+
     <form v-else class="card" @submit.prevent="onSubmit">
       <div class="grid">
         <label>
@@ -19,6 +23,12 @@
           <span>{{ store.isArabic ? 'النوع *' : 'Type *' }}</span>
           <select v-model="form.type" required>
             <option v-for="option in types" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'التصنيف' : 'Classification' }}</span>
+          <select v-model="form.classification">
+            <option v-for="option in classifications" :key="option" :value="option">{{ option }}</option>
           </select>
         </label>
         <label>
@@ -44,6 +54,26 @@
           <input v-model="form.address" />
         </label>
         <label>
+          <span>{{ store.isArabic ? 'المنطقة / الولاية' : 'State' }}</span>
+          <input v-model="form.state" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'الدولة' : 'Country' }}</span>
+          <input v-model="form.country" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'الرمز البريدي' : 'Postal code' }}</span>
+          <input v-model="form.postalCode" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'خط العرض' : 'Latitude' }}</span>
+          <input v-model="form.latitude" type="number" step="any" min="-90" max="90" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'خط الطول' : 'Longitude' }}</span>
+          <input v-model="form.longitude" type="number" step="any" min="-180" max="180" />
+        </label>
+        <label>
           <span>{{ store.isArabic ? 'غرف النوم' : 'Bedrooms' }}</span>
           <input v-model="form.bedrooms" type="number" min="0" />
         </label>
@@ -58,6 +88,33 @@
         <label>
           <span>{{ store.isArabic ? 'سنة البناء' : 'Year built' }}</span>
           <input v-model="form.yearBuilt" type="number" min="1800" max="2100" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'الطوابق' : 'Floors' }}</span>
+          <input v-model="form.floors" type="number" min="0" />
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'وحدة المساحة' : 'Area unit' }}</span>
+          <select v-model="form.areaUnit">
+            <option v-for="option in areaUnits" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'الحالة العامة' : 'Condition' }}</span>
+          <select v-model="form.condition">
+            <option v-for="option in conditions" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </label>
+        <label>
+          <span>{{ store.isArabic ? 'الإشغال' : 'Occupancy' }}</span>
+          <select v-model="form.occupancyStatus">
+            <option value="">{{ store.isArabic ? 'غير محدد' : 'Unspecified' }}</option>
+            <option v-for="option in occupancyStatuses" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input v-model="form.negotiable" type="checkbox" />
+          <span>{{ store.isArabic ? 'قابل للتفاوض' : 'Negotiable' }}</span>
         </label>
         <label>
           <span>{{ store.isArabic ? 'المالك' : 'Owner' }}</span>
@@ -89,6 +146,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiGet } from '@/api/client'
 import { useStore } from '@/stores'
+import { DUPLICATE_DRAFT_KEY, DUPLICATE_QUERY_FLAG } from '@/utils/propertyDuplicate'
 import type { Owner } from '@/types'
 
 const props = defineProps<{ id?: string }>()
@@ -97,6 +155,7 @@ const route = useRoute()
 const router = useRouter()
 const loadingRecord = ref(false)
 const formError = ref('')
+const duplicatePrefill = ref(false)
 const owners = ref<Owner[]>([])
 
 const recordId = computed(() => props.id || String(route.params.id || ''))
@@ -104,27 +163,60 @@ const isEdit = computed(() => Boolean(recordId.value))
 
 const types = ['HOUSE', 'APARTMENT', 'CONDO', 'TOWNHOUSE', 'VILLA', 'LAND', 'COMMERCIAL']
 const statuses = ['AVAILABLE', 'UNDER_NEGOTIATION', 'PENDING', 'RESERVED', 'SOLD', 'RENTED', 'OFF_MARKET', 'UNAVAILABLE']
+const classifications = ['SALE', 'RENT']
+const areaUnits = ['SQ_M', 'SQ_FT']
+const conditions = ['NEW', 'EXCELLENT', 'GOOD', 'FAIR', 'POOR', 'UNDER_CONSTRUCTION']
+const occupancyStatuses = ['VACANT', 'OWNER_OCCUPIED', 'TENANT_OCCUPIED']
 
-const form = reactive({
-  title: '',
-  referenceNumber: '',
-  type: 'HOUSE',
-  status: 'AVAILABLE',
-  price: '',
-  currency: 'USD',
-  city: '',
-  address: '',
-  bedrooms: '0',
-  bathrooms: '0',
-  area: '',
-  yearBuilt: '',
-  description: '',
-  ownerId: ''
-})
+interface PropertyFormState {
+  title: string
+  referenceNumber: string
+  type: string
+  status: string
+  classification: string
+  price: string
+  currency: string
+  city: string
+  state: string
+  country: string
+  postalCode: string
+  address: string
+  latitude: string
+  longitude: string
+  bedrooms: string
+  bathrooms: string
+  floors: string
+  area: string
+  areaUnit: string
+  yearBuilt: string
+  condition: string
+  occupancyStatus: string
+  negotiable: boolean
+  description: string
+  ownerId: string
+}
+
+function emptyForm(): PropertyFormState {
+  return {
+    title: '', referenceNumber: '', type: 'HOUSE', status: 'AVAILABLE', classification: 'SALE',
+    price: '', currency: 'USD', city: '', state: '', country: '', postalCode: '', address: '',
+    latitude: '', longitude: '', bedrooms: '0', bathrooms: '0', floors: '', area: '', areaUnit: 'SQ_M',
+    yearBuilt: '', condition: 'GOOD', occupancyStatus: '', negotiable: false, description: '', ownerId: ''
+  }
+}
+
+const form = reactive<PropertyFormState>(emptyForm())
+
+function text(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value)
+}
 
 onMounted(async () => {
   void loadOwners()
-  if (!isEdit.value) return
+  if (!isEdit.value) {
+    applyDuplicateDraft()
+    return
+  }
   loadingRecord.value = true
   const property = await store.fetchProperty(recordId.value)
   if (property) {
@@ -133,20 +225,75 @@ onMounted(async () => {
       referenceNumber: property.referenceNumber,
       type: property.type,
       status: property.status,
+      classification: property.classification,
       price: String(property.price),
       currency: property.currency,
       city: property.city || '',
+      state: property.state || '',
+      country: property.country || '',
+      postalCode: property.postalCode || '',
       address: property.address || '',
+      latitude: property.latitude == null ? '' : String(property.latitude),
+      longitude: property.longitude == null ? '' : String(property.longitude),
       bedrooms: String(property.bedrooms),
       bathrooms: String(property.bathrooms),
+      floors: property.floors == null ? '' : String(property.floors),
       area: property.area == null ? '' : String(property.area),
+      areaUnit: property.areaUnit,
       yearBuilt: property.yearBuilt == null ? '' : String(property.yearBuilt),
+      condition: property.condition,
+      occupancyStatus: property.occupancyStatus || '',
+      negotiable: property.negotiable,
       description: property.description || '',
       ownerId: property.ownerId || ''
     })
   }
   loadingRecord.value = false
 })
+
+/** Reads the sanitized server draft handed off by PropertyDetail. */
+function applyDuplicateDraft(): void {
+  if (String(route.query[DUPLICATE_QUERY_FLAG] || '') !== '1') return
+  const raw = sessionStorage.getItem(DUPLICATE_DRAFT_KEY)
+  sessionStorage.removeItem(DUPLICATE_DRAFT_KEY)
+  if (!raw) return
+  try {
+    const draft = JSON.parse(raw) as Record<string, unknown>
+    const sourceTitle = text(draft.title)
+    Object.assign(form, {
+      ...emptyForm(),
+      title: sourceTitle ? `${sourceTitle.slice(0, 190)} (Copy)` : '',
+      // No reference number, share token, id or prior status is carried over.
+      referenceNumber: '',
+      status: 'AVAILABLE',
+      type: text(draft.type) || 'HOUSE',
+      classification: text(draft.classification) || 'SALE',
+      price: text(draft.price),
+      currency: text(draft.currency) || 'USD',
+      city: text(draft.city),
+      state: text(draft.state),
+      country: text(draft.country),
+      postalCode: text(draft.postalCode),
+      address: text(draft.address),
+      latitude: text(draft.latitude),
+      longitude: text(draft.longitude),
+      bedrooms: text(draft.bedrooms) || '0',
+      bathrooms: text(draft.bathrooms) || '0',
+      floors: text(draft.floors),
+      area: text(draft.area),
+      areaUnit: text(draft.areaUnit) || 'SQ_M',
+      yearBuilt: text(draft.yearBuilt),
+      condition: text(draft.condition) || 'GOOD',
+      occupancyStatus: text(draft.occupancyStatus),
+      negotiable: draft.negotiable === true || draft.negotiable === 'true',
+      description: text(draft.description),
+      ownerId: text(draft.ownerId)
+    })
+    duplicatePrefill.value = true
+  } catch {
+    duplicatePrefill.value = false
+  }
+}
 
 async function loadOwners(): Promise<void> {
   try {
@@ -169,14 +316,25 @@ function payload(): Record<string, unknown> {
     ...(form.referenceNumber && !isEdit.value ? { referenceNumber: form.referenceNumber.trim() } : {}),
     type: form.type,
     status: form.status,
+    classification: form.classification,
     price: Number(form.price),
     currency: form.currency.trim() || 'USD',
     city: form.city.trim() || undefined,
+    state: form.state.trim() || undefined,
+    country: form.country.trim() || undefined,
+    postalCode: form.postalCode.trim() || undefined,
     address: form.address.trim() || undefined,
+    latitude: form.latitude !== '' ? Number(form.latitude) : undefined,
+    longitude: form.longitude !== '' ? Number(form.longitude) : undefined,
     bedrooms: Number(form.bedrooms || 0),
     bathrooms: Number(form.bathrooms || 0),
+    floors: form.floors !== '' ? Number(form.floors) : undefined,
     area: form.area ? Number(form.area) : undefined,
+    areaUnit: form.areaUnit,
     yearBuilt: form.yearBuilt ? Number(form.yearBuilt) : undefined,
+    condition: form.condition,
+    occupancyStatus: form.occupancyStatus || undefined,
+    negotiable: form.negotiable,
     description: form.description.trim() || undefined,
     ownerId: form.ownerId || ''
   }
@@ -206,6 +364,9 @@ h1 { font-size: 1.4rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.9rem; }
 label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; color: #374151; }
 label.full { margin-top: 0.9rem; }
+label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
+label.checkbox input { width: auto; }
+.notice { background: #eef2ff; color: #3730a3; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
 small { color: #9ca3af; font-size: 0.7rem; }
 input, select, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.55rem 0.65rem; font-size: 0.9rem; font-family: inherit; }
 .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }

@@ -1,6 +1,11 @@
 <template>
   <div class="page">
-    <h1>{{ store.isArabic ? 'الإعدادات' : 'Settings' }}</h1>
+    <div class="page-head">
+      <h1>{{ store.isArabic ? 'الإعدادات' : 'Settings' }}</h1>
+      <button v-if="!fxOnly && isAdmin" class="btn btn-quiet" type="button" :disabled="downloadingBackup" @click="onDownloadBackup">
+        <i class="fas fa-download"></i> {{ downloadingBackup ? '…' : (store.isArabic ? 'تنزيل نسخة احتياطية' : 'Download Backup Snapshot') }}
+      </button>
+    </div>
     <h2 v-if="fxOnly" class="section-title">{{ store.isArabic ? 'العملات وأسعار الصرف' : 'Currencies & exchange rates' }}</h2>
 
     <div v-if="loading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
@@ -140,7 +145,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
+import { apiGet, apiPatch, apiPost, errorMessage, tokenStore } from '@/api/client'
 import { useStore } from '@/stores'
 import type { ExchangeRateOverview, TenantSettings } from '@/types'
 
@@ -150,6 +155,8 @@ const loading = ref(true)
 const saving = ref(false)
 const savingFx = ref(false)
 const message = ref('')
+const downloadingBackup = ref(false)
+const isAdmin = () => store.user?.role === 'ADMIN'
 const fxMessage = ref('')
 const isError = ref(false)
 const fxError = ref(false)
@@ -185,6 +192,36 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function onDownloadBackup(): Promise<void> {
+  downloadingBackup.value = true
+  message.value = ''
+  isError.value = false
+  try {
+    const token = tokenStore.get()
+    const response = await fetch('/api/admin/export-snapshot', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) throw new Error(response.status === 403 ? 'Admin access is required.' : 'Snapshot export failed.')
+    const blob = await response.blob()
+    const disposition = response.headers.get('Content-Disposition') || ''
+    const filename = disposition.match(/filename="([^"]+)"/)?.[1] || 'estateos-snapshot.json'
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+    message.value = store.isArabic ? 'تم تنزيل النسخة الاحتياطية.' : 'Backup snapshot downloaded.'
+  } catch (e) {
+    isError.value = true
+    message.value = errorMessage(e as Error)
+  } finally {
+    downloadingBackup.value = false
+  }
+}
 
 async function onSave(): Promise<void> {
   message.value = ''

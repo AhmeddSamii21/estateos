@@ -1,18 +1,73 @@
-import { Router } from 'express'
-import { LeadStatus, Prisma, PropertyStatus, PropertyType } from '@prisma/client'
+import { Router, type Request, type Response, type NextFunction } from 'express'
+import multer from 'multer'
+import { LeadStatus, Prisma, PropertyStatus, PropertyType, Role } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
-import { leadScope, organizationIdOf, roleOf, userIdOf } from '../utils/scope'
+import { leadScope, organizationIdOf, requireAnyRole, roleOf, userIdOf } from '../utils/scope'
 import { booleanValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { parseMoney } from '../utils/money'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
 import { logAudit } from '../utils/audit'
 import { scoreLeadPropertyMatch } from '../utils/leadMatching'
 import { followUpWhere, nullableDateValue, type FollowUpBucket } from '../utils/followUps'
+import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
+import { LEAD_IMPORT_FIELDS, leadImportData } from '../utils/leadImport'
 
 const router = Router()
 router.use(authMiddleware)
+
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 }
+})
+
+function importUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  importUpload.single('file')(req, res, (error: unknown) => {
+    if (error) {
+      const message = error instanceof Error ? error.message : 'CSV upload failed'
+      return next(createError(message, 400))
+    }
+    next()
+  })
+}
+
+function leadImportGuard(req: Request, _res: Response, next: NextFunction) {
+  try {
+    requireAnyRole(req, [Role.ADMIN, Role.MANAGER, Role.AGENT])
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
+type ImportIssue = { field: string; message: string }
+
+function isDryRun(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return true
+  return value !== false && String(value).toLowerCase() !== 'false'
+}
+
+/** Copies the pure preview and appends relation checks scoped to the organization. */
+async function validateLeadImportRows(preview: ImportPreview, organizationId: string): Promise<ImportPreview> {
+  const rows = await Promise.all(preview.rows.map(async (result) => {
+    if (result.errors.length > 0) return result
+    const issues: ImportIssue[] = []
+    const propertyId = optionalString(result.values.propertyId, 'propertyId', 100)
+    const assignedToId = optionalString(result.values.assignedToId, 'assignedToId', 100)
+    try {
+      await assertAssignable(assignedToId, propertyId, organizationId)
+    } catch (error) {
+      issues.push({
+        field: assignedToId ? 'assignedToId' : 'propertyId',
+        message: error instanceof Error ? error.message : 'Related record not found'
+      })
+    }
+    return { ...result, errors: [...result.errors, ...issues] }
+  }))
+  const invalidCount = rows.filter((row) => row.errors.length > 0).length
+  return { ...preview, rows, validCount: rows.length - invalidCount, invalidCount }
+}
 
 function scope(organizationId: string): Prisma.LeadWhereInput {
   return { deletedAt: null, ...leadScope(organizationId) }
@@ -116,6 +171,73 @@ router.get('/', async (req, res, next) => {
       prisma.lead.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } })
     ])
     res.json({ success: true, data: leads, pagination: { page, limit, total, pages: Math.ceil(total / limit) } })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * CSV import: multipart `file` or JSON `csv`. Dry runs (the default) return a
+ * per-row validation preview; a real import creates every lead in one
+ * transaction. Template: importTemplate(LEAD_IMPORT_FIELDS).
+ */
+router.post('/import', leadImportGuard, importUploadMiddleware, async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const body = req.body as Record<string, unknown>
+    const csv = typeof body?.csv === 'string'
+      ? body.csv
+      : req.file?.buffer.toString('utf8') ?? ''
+    if (!csv.trim()) throw createError('CSV content is required', 400)
+
+    const preview = buildImportPreview(csv, LEAD_IMPORT_FIELDS)
+    if (preview.rows.length > 500) throw createError('A maximum of 500 rows can be imported at once', 400)
+    const checked = await validateLeadImportRows(preview, organizationId)
+
+    if (isDryRun(body?.dryRun)) {
+      return res.json({
+        success: true,
+        data: {
+          dryRun: true,
+          preview: checked,
+          headers: importHeaders(LEAD_IMPORT_FIELDS)
+        },
+        message: 'Import preview generated'
+      })
+    }
+    if (checked.invalidCount > 0) {
+      throw createError('All rows must be valid before importing', 400)
+    }
+
+    const ids: string[] = []
+    await prisma.$transaction(async (tx) => {
+      for (const result of checked.rows) {
+        const values = result.values
+        const assignedToId = optionalString(values.assignedToId, 'assignedToId', 100) || userId
+        const propertyId = optionalString(values.propertyId, 'propertyId', 100)
+        const created = await tx.lead.create({
+          data: {
+            ...leadImportData(values),
+            ...(assignedToId ? { assignedTo: { connect: { id: assignedToId } } } : {}),
+            ...(propertyId ? { property: { connect: { id: propertyId } } } : {})
+          }
+        })
+        await logAudit(tx, {
+          userId,
+          action: 'LEAD_IMPORTED',
+          entityType: 'Lead',
+          entityId: created.id,
+          details: { sourceRow: result.row, status: created.status, assignedToId, propertyId }
+        })
+        ids.push(created.id)
+      }
+    })
+    res.json({
+      success: true,
+      data: { total: checked.rows.length, created: ids.length, ids },
+      message: `${ids.length} leads imported successfully`
+    })
   } catch (error) {
     next(error)
   }

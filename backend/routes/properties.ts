@@ -28,9 +28,14 @@ import { parseMoney } from '../utils/money'
 import { buildPropertySearch } from '../utils/search'
 import { validatePropertyTransition } from '../utils/propertyStatus'
 import { logAudit, logPropertyActivity } from '../utils/audit'
+import { priceChangeMetadata, PROPERTY_PRICE_CHANGED } from '../utils/priceHistory'
+import { buildDuplicateDraft } from '../utils/propertyDuplication'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
 import { createStorageKey, sanitizeOriginalName, validateImageFile } from '../utils/files'
 import { readPropertyImage, removePropertyImage, writePropertyImage } from '../storage/local'
+import { buildImportPreview, importHeaders, type ImportPreview } from '../utils/csvImport'
+import { PROPERTY_IMPORT_FIELDS, propertyImportData } from '../utils/propertyImport'
+import { BOARD_STATUSES, boardQuickTransitions, groupByBoardStatus } from '../utils/propertyBoard'
 
 const router = Router()
 router.use(authMiddleware)
@@ -51,6 +56,21 @@ function imageUploadMiddleware(req: Request, res: Response, next: NextFunction) 
   })
 }
 
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 }
+})
+
+function importUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  importUpload.single('file')(req, res, (error: unknown) => {
+    if (error) {
+      const message = error instanceof Error ? error.message : 'CSV upload failed'
+      return next(createError(message, 400))
+    }
+    next()
+  })
+}
+
 async function assertRelatedUsers(assignedAgentId: string | undefined, ownerId: string | undefined, organizationId: string) {
   if (assignedAgentId) {
     const user = await prisma.user.findFirst({
@@ -66,6 +86,55 @@ async function assertRelatedUsers(assignedAgentId: string | undefined, ownerId: 
     })
     if (!owner) throw createError('Owner not found', 404)
   }
+}
+
+type ImportIssue = { field: string; message: string }
+
+function isDryRun(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return true
+  return value !== false && String(value).toLowerCase() !== 'false'
+}
+
+/** Copies the pure preview and appends database-level checks per row. */
+async function validatePropertyImportRows(preview: ImportPreview, organizationId: string): Promise<ImportPreview> {
+  const seenReferences = new Set<string>()
+  const rows = await Promise.all(preview.rows.map(async (result) => {
+    if (result.errors.length > 0) return result
+    const issues: ImportIssue[] = []
+    const values = result.values
+    const referenceNumber = typeof values.referenceNumber === 'string' ? values.referenceNumber.trim() : ''
+    if (referenceNumber) {
+      if (seenReferences.has(referenceNumber)) {
+        issues.push({ field: 'referenceNumber', message: 'Duplicate reference number in CSV' })
+      } else {
+        seenReferences.add(referenceNumber)
+        const existing = await prisma.property.findFirst({
+          where: { referenceNumber },
+          select: { id: true }
+        })
+        if (existing) issues.push({ field: 'referenceNumber', message: 'Reference number already exists' })
+      }
+    }
+    const currency = typeof values.currency === 'string' ? values.currency.trim() : ''
+    if (currency && !/^[A-Za-z]{3}$/.test(currency)) {
+      issues.push({ field: 'currency', message: 'currency must be a 3-letter ISO code' })
+    }
+    const assignedAgentId = typeof values.assignedAgentId === 'string' ? values.assignedAgentId.trim() : undefined
+    const ownerId = typeof values.ownerId === 'string' ? values.ownerId.trim() : undefined
+    if (assignedAgentId || ownerId) {
+      try {
+        await assertRelatedUsers(assignedAgentId, ownerId, organizationId)
+      } catch (error) {
+        issues.push({
+          field: assignedAgentId ? 'assignedAgentId' : 'ownerId',
+          message: error instanceof Error ? error.message : 'Related record not found'
+        })
+      }
+    }
+    return { ...result, errors: [...result.errors, ...issues] }
+  }))
+  const invalidCount = rows.filter((row) => row.errors.length > 0).length
+  return { ...preview, rows, validCount: rows.length - invalidCount, invalidCount }
 }
 
 async function listProperties(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -131,6 +200,7 @@ router.post('/bulk', requireRole(MANAGEMENT_ROLES), async (req, res, next) => {
 
     const properties = await prisma.property.findMany({
       where: { id: { in: ids }, organizationId },
+      take: 500,
       select: { id: true, title: true, status: true, assignedAgentId: true, isActive: true, deletedAt: true }
     })
     const foundIds = new Set(properties.map((property) => property.id))
@@ -262,6 +332,142 @@ async function findAccessibleProperty(id: string, req: Request, options: { forWr
   }
   return property
 }
+
+/**
+ * CSV import: multipart `file` or JSON `csv`. Dry runs (the default) return a
+ * per-row validation preview; a real import creates every property in one
+ * transaction. Template: importTemplate(PROPERTY_IMPORT_FIELDS).
+ */
+router.post('/import', requireRole(MANAGEMENT_ROLES), importUploadMiddleware, async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const body = req.body as Record<string, unknown>
+    const csv = typeof body?.csv === 'string'
+      ? body.csv
+      : req.file?.buffer.toString('utf8') ?? ''
+    if (!csv.trim()) throw createError('CSV content is required', 400)
+
+    const preview = buildImportPreview(csv, PROPERTY_IMPORT_FIELDS)
+    if (preview.rows.length > 500) throw createError('A maximum of 500 rows can be imported at once', 400)
+    const checked = await validatePropertyImportRows(preview, organizationId)
+
+    if (isDryRun(body?.dryRun)) {
+      return res.json({
+        success: true,
+        data: {
+          dryRun: true,
+          preview: checked,
+          headers: importHeaders(PROPERTY_IMPORT_FIELDS)
+        },
+        message: 'Import preview generated'
+      })
+    }
+    if (checked.invalidCount > 0) {
+      throw createError('All rows must be valid before importing', 400)
+    }
+
+    const stamp = Date.now().toString(36).toUpperCase()
+    const ids: string[] = []
+    await prisma.$transaction(async (tx) => {
+      for (const [index, result] of checked.rows.entries()) {
+        const values = { ...result.values }
+        if (!values.referenceNumber) {
+          values.referenceNumber = `PROP-${stamp}-${index + 1}`
+        }
+        const assignedAgentId = typeof values.assignedAgentId === 'string' && values.assignedAgentId
+          ? values.assignedAgentId.trim()
+          : undefined
+        const ownerId = typeof values.ownerId === 'string' && values.ownerId
+          ? values.ownerId.trim()
+          : undefined
+        delete values.assignedAgentId
+        delete values.ownerId
+        const created = await tx.property.create({
+          data: {
+            ...propertyImportData(values),
+            organization: { connect: { id: organizationId } },
+            ...(assignedAgentId ? { assignedAgent: { connect: { id: assignedAgentId } } } : {}),
+            ...(ownerId ? { owner: { connect: { id: ownerId } } } : {})
+          }
+        })
+        await logPropertyActivity(tx, { propertyId: created.id, userId, action: 'PROPERTY_CREATED', details: { imported: true } })
+        await logAudit(tx, {
+          userId,
+          action: 'PROPERTY_IMPORTED',
+          entityType: 'Property',
+          entityId: created.id,
+          details: { sourceRow: result.row, referenceNumber: created.referenceNumber }
+        })
+        ids.push(created.id)
+      }
+    })
+    res.json({
+      success: true,
+      data: { total: checked.rows.length, created: ids.length, ids },
+      message: `${ids.length} properties imported successfully`
+    })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return next(createError('A property with this reference number already exists', 409))
+    }
+    next(error)
+  }
+})
+
+/** Read-only status board; registered before /:id so 'board' is not an id. */
+router.get('/board', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const where: Prisma.PropertyWhereInput = {
+      organizationId,
+      deletedAt: null,
+      status: { in: [...BOARD_STATUSES] }
+    }
+    if (req.user?.role === 'AGENT') where.assignedAgentId = userIdOf(req)
+    const properties = await prisma.property.findMany({
+      where,
+      take: 500,
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        referenceNumber: true,
+        status: true,
+        price: true,
+        currency: true,
+        assignedAgentId: true
+      }
+    })
+    const grouped = groupByBoardStatus(properties)
+    res.json({
+      success: true,
+      data: {
+        columns: BOARD_STATUSES.map((status) => ({ status, label: status, count: grouped[status].length })),
+        properties: grouped,
+        transitions: Object.fromEntries(BOARD_STATUSES.map((status) => [status, boardQuickTransitions(status)]))
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+/**
+ * Sanitized prefill for "Duplicate Property". The client opens /properties/new
+ * with this draft; no identifier, share token, audit array or financial
+ * relation is included in the response.
+ */
+router.get('/:id/duplicate-draft', async (req, res, next) => {
+  try {
+    const id = String(req.params.id)
+    const property = await findAccessibleProperty(id, req)
+    const draft = buildDuplicateDraft(property as unknown as Record<string, unknown>)
+    res.json({ success: true, data: draft })
+  } catch (error) {
+    next(error)
+  }
+})
 
 router.get('/:id', async (req, res, next) => {
   try {
@@ -559,16 +765,32 @@ router.patch('/:id', async (req, res, next) => {
         : enumValue(body.occupancyStatus, 'occupancyStatus', Object.values(OccupancyStatus))
       changes.occupancyStatus = { before: existing.occupancyStatus, after: body.occupancyStatus }
     }
-    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'currency', 'operationalNotes']) {
-      if (body[field] !== undefined) data[field as 'city'] = optionalString(body[field], field, field === 'currency' ? 3 : 500)
+    for (const field of ['address', 'city', 'state', 'country', 'postalCode', 'operationalNotes']) {
+      if (body[field] !== undefined) {
+        data[field as 'city'] = optionalString(body[field], field, field === 'operationalNotes' ? 5000 : 500)
+      }
     }
+    const nextCurrency = body.currency !== undefined
+      ? (optionalString(body.currency, 'currency', 3) || 'USD').toUpperCase()
+      : existing.currency
+    if (body.currency !== undefined) data.currency = nextCurrency
     for (const field of ['latitude', 'longitude', 'area', 'bedrooms', 'bathrooms', 'floors', 'yearBuilt']) {
       if (body[field] !== undefined) data[field as 'price'] = numberValue(body[field], field, { min: field === 'latitude' ? -90 : undefined })
     }
+    let nextPrice = existing.price.toString()
     if (body.price !== undefined) {
-      const price = parseMoney(body.price, 'price', { min: 0 })!
-      data.price = price
-      if (price !== existing.price.toString()) changes.price = { before: existing.price.toString(), after: price }
+      nextPrice = parseMoney(body.price, 'price', { min: 0 })!
+      data.price = nextPrice
+    }
+    const priceChange = (body.price !== undefined || body.currency !== undefined)
+      ? priceChangeMetadata(
+          { price: existing.price, currency: existing.currency },
+          { price: nextPrice, currency: nextCurrency }
+        )
+      : null
+    if (priceChange) {
+      changes.price = { before: priceChange.oldPrice, after: priceChange.newPrice }
+      changes.currency = { before: priceChange.oldCurrency, after: priceChange.newCurrency }
     }
     if (body.negotiable !== undefined) data.negotiable = booleanValue(body.negotiable, 'negotiable')
     if (body.featured !== undefined) data.featured = booleanValue(body.featured, 'featured')
@@ -589,6 +811,11 @@ router.patch('/:id', async (req, res, next) => {
 
     const property = await prisma.$transaction(async (tx) => {
       const updated = await tx.property.update({ where: { id }, data })
+      if (priceChange) {
+        const details = { ...priceChange }
+        await logPropertyActivity(tx, { propertyId: id, userId, action: PROPERTY_PRICE_CHANGED, details })
+        await logAudit(tx, { userId, action: PROPERTY_PRICE_CHANGED, entityType: 'Property', entityId: id, details })
+      }
       if (Object.keys(changes).length) {
         await logPropertyActivity(tx, { propertyId: id, userId, action: 'PROPERTY_UPDATED', details: changes })
       }
@@ -630,7 +857,8 @@ router.get('/:id/images', async (req, res, next) => {
     await findAccessibleProperty(id, req)
     const images = await prisma.propertyImage.findMany({
       where: { propertyId: id, deletedAt: null },
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      take: 500
     })
     res.json({ success: true, data: images })
   } catch (error) {
@@ -650,6 +878,7 @@ router.post('/:id/images', imageUploadMiddleware, async (req, res, next) => {
 
     const existing = await prisma.propertyImage.findMany({
       where: { propertyId: id, deletedAt: null },
+      take: 500,
       select: { id: true, isPrimary: true, sortOrder: true }
     })
     const hasPrimary = existing.some((image) => image.isPrimary)
@@ -720,7 +949,7 @@ router.patch('/:id/images/reorder', async (req, res, next) => {
     }
     const orderedIds = Array.isArray(req.body?.orderedIds) ? req.body.orderedIds.map((value: unknown) => String(value)) : []
     if (!orderedIds.length) throw createError('orderedIds is required', 400)
-    const images = await prisma.propertyImage.findMany({ where: { propertyId: id, deletedAt: null }, select: { id: true } })
+    const images = await prisma.propertyImage.findMany({ where: { propertyId: id, deletedAt: null }, take: 500, select: { id: true } })
     const existingIds = new Set(images.map((image) => image.id))
     if (orderedIds.length !== images.length || orderedIds.some((imageId: string) => !existingIds.has(imageId))) {
       throw createError('orderedIds must include every active image exactly once', 400)
@@ -731,7 +960,7 @@ router.patch('/:id/images/reorder', async (req, res, next) => {
       }
       await logAudit(tx, { userId, action: 'PROPERTY_IMAGES_REORDERED', entityType: 'Property', entityId: id })
     })
-    const updated = await prisma.propertyImage.findMany({ where: { propertyId: id, deletedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+    const updated = await prisma.propertyImage.findMany({ where: { propertyId: id, deletedAt: null }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], take: 500 })
     res.json({ success: true, data: updated, message: 'Images reordered successfully' })
   } catch (error) {
     next(error)

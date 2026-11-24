@@ -52,6 +52,7 @@ router.get('/commission-statements', authMiddleware, async (req, res, next) => {
     const rows = await prisma.commission.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take: 10000,
       select: {
         id: true,
         amount: true,
@@ -261,6 +262,7 @@ router.get('/payments/summary', async (req, res, next) => {
     const deal = await assertDeal(dealId, organizationId)
     const payments = await prisma.payment.findMany({
       where: { dealId, deletedAt: null },
+      take: 10000,
       select: { amount: true, baseAmount: true, currency: true, status: true, deletedAt: true }
     })
     const received = receivedAmount(payments)

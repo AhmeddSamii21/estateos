@@ -3,6 +3,7 @@ import { prisma } from '../prisma'
 import { createNotifications, organizationRecipientIds, type NotificationInput } from './notifications'
 import { leadScope } from '../utils/scope'
 import { followUpBucket, startOfUtcDay } from '../utils/followUps'
+import { UNCONTACTED_SLA_HOURS, uncontactedLeadWhere } from '../utils/reportMetrics'
 import { daysUntilLeaseEnd, isLeaseRenewalDue, leaseRenewalState, MAX_RENEWAL_NOTICE_DAYS } from '../utils/leases'
 
 const DEFAULT_DUE_SOON_HOURS = 48
@@ -79,6 +80,7 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
       isActive: true,
       ...(options.organizationIds ? { id: { in: options.organizationIds } } : {})
     },
+    take: 1000,
     select: { id: true }
   })
 
@@ -97,6 +99,7 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
         ],
         deal: { organizationId: org.id, deletedAt: null }
       },
+      take: 500,
       select: {
         id: true,
         dealId: true,
@@ -105,8 +108,7 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
         status: true,
         paidAt: true,
         deal: { select: { id: true, referenceNumber: true, userId: true, organizationId: true, dueAt: true } }
-      },
-      take: 500
+      }
     })
 
     for (const payment of payments) {
@@ -215,6 +217,46 @@ export async function runReminders(now = new Date(), options: ReminderRunOptions
         metadata: { reminderDay: todayKey, kind: bucket, dueDate }
       })), todayKey)
       result.leadFollowUpReminders += created
+    }
+
+    // 3b) NEW leads with no contact at all for longer than the SLA window.
+    // Deduplication is per lead/day so a retry never produces a second alert.
+    const uncontactedCutoff = new Date(now.getTime() - UNCONTACTED_SLA_HOURS * 60 * 60 * 1000)
+    const uncontacted = await prisma.lead.findMany({
+      where: uncontactedLeadWhere(org.id, { now }),
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        assignedToId: true,
+        status: true,
+        lastContactedAt: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 500
+    }).then((rows) => rows.filter((lead) =>
+      lead.status === LeadStatus.NEW &&
+      lead.lastContactedAt == null &&
+      lead.createdAt.getTime() < uncontactedCutoff.getTime()
+    ))
+    for (const lead of uncontacted) {
+      const recipients = await organizationRecipientIds(prisma, org.id, {
+        roles: ['ADMIN', 'MANAGER'],
+        includeUserIds: [lead.assignedToId || '']
+      })
+      if (!recipients.length) continue
+      await createDailyReminders(recipients.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: 'NEW_LEAD_UNCONTACTED',
+        title: 'New lead awaiting first contact',
+        message: `${leadLabel(lead)} has not been contacted in over 24 hours.`,
+        entityType: 'Lead',
+        entityId: lead.id,
+        actionUrl: '/leads',
+        metadata: { reminderDay: todayKey, kind: 'uncontacted' }
+      })), todayKey)
     }
 
     // 4) Rental leases expiring within their own notice window (or already

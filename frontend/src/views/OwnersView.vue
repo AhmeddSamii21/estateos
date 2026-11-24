@@ -39,6 +39,7 @@
             <td>{{ row._count?.properties ?? row.properties?.length ?? 0 }}</td>
             <td><span class="tag" :class="row.isActive ? 'active' : 'inactive'">{{ row.isActive ? (store.isArabic ? 'نشط' : 'Active') : (store.isArabic ? 'مؤرشف' : 'Archived') }}</span></td>
             <td class="actions-col">
+              <button class="link" type="button" @click="openStatement(row)">{{ store.isArabic ? 'كشف الحساب' : 'Statement' }}</button>
               <button class="link" type="button" @click="openDetails(row)">{{ store.isArabic ? 'عرض' : 'View' }}</button>
               <button v-if="store.canManage" class="link" type="button" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
               <button v-if="store.canManage && row.isActive" class="link danger" type="button" @click="archiveOwner(row)">{{ store.isArabic ? 'أرشفة' : 'Archive' }}</button>
@@ -117,6 +118,92 @@
         </div>
       </section>
     </div>
+
+    <div v-if="statementOpen" class="overlay" @click.self="closeStatement">
+      <section class="modal statement-modal">
+        <div class="modal-head">
+          <h2>{{ store.isArabic ? 'كشف المالك' : 'Owner Statement' }}</h2>
+          <button type="button" aria-label="Close" @click="closeStatement">×</button>
+        </div>
+        <div class="statement-subtitle muted">
+          {{ statementOwner?.displayName || [statementOwner?.firstName, statementOwner?.lastName].filter(Boolean).join(' ') || statementOwner?.companyName || '—' }}
+          <span v-if="statement">· {{ new Date(statement.generatedAt).toLocaleString() }}</span>
+        </div>
+        <div v-if="statementLoading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading statement…' }}</div>
+        <div v-else-if="statementError" class="error inline-error">{{ statementError }}</div>
+        <div v-else-if="statement" class="statement-body">
+          <div class="summary-cards">
+            <div class="summary-card">
+              <span>{{ store.isArabic ? 'العقارات' : 'Properties' }}</span>
+              <strong>{{ statement.properties.count }}</strong>
+              <small>{{ statement.properties.activeCount }} {{ store.isArabic ? 'نشط' : 'active' }}</small>
+            </div>
+            <div class="summary-card">
+              <span>{{ store.isArabic ? 'الصفقات' : 'Deals' }}</span>
+              <strong>{{ statement.deals.count }}</strong>
+              <small>{{ Object.keys(statement.deals.byStatus || {}).length }} {{ store.isArabic ? 'حالة' : 'statuses' }}</small>
+            </div>
+          </div>
+
+          <section class="statement-section">
+            <h3>{{ store.isArabic ? 'تفصيل حسب العملة' : 'Currency breakdown' }}</h3>
+            <p v-if="statement.financialsRestricted" class="notice">
+              {{ store.isArabic ? 'الأرقام المالية متاحة لأدوار المالية فقط.' : 'Financial figures are available to finance roles only.' }}
+            </p>
+            <div v-else-if="!statement.financials?.currencies.length" class="empty">
+              {{ store.isArabic ? 'لا توجد بيانات مالية مرتبطة.' : 'No financial activity recorded.' }}
+            </div>
+            <div v-else class="table-wrap statement-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{{ store.isArabic ? 'العملة' : 'Currency' }}</th>
+                    <th>{{ store.isArabic ? 'العقارات / القيمة' : 'Properties / value' }}</th>
+                    <th>{{ store.isArabic ? 'الصفقات / المبلغ' : 'Deals / amount' }}</th>
+                    <th>{{ store.isArabic ? 'المحصل' : 'Collected' }}</th>
+                    <th>{{ store.isArabic ? 'المصروفات' : 'Expenses' }}</th>
+                    <th>{{ store.isArabic ? 'الصافي' : 'Net' }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in statement.financials?.currencies" :key="row.currency">
+                    <td><span class="tag">{{ row.currency }}</span></td>
+                    <td>{{ row.properties.count }} · {{ row.properties.listedValue }}</td>
+                    <td>{{ row.deals.count }} · {{ row.deals.amount }}</td>
+                    <td>{{ row.payments.collected }} ({{ row.payments.count }})</td>
+                    <td>{{ row.expenses.paid }} ({{ row.expenses.count }})</td>
+                    <td><strong>{{ row.net }}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="statement-section">
+            <h3>{{ store.isArabic ? 'العقارات المرتبطة' : 'Linked properties' }}</h3>
+            <div v-if="!statement.properties.list.length" class="empty">
+              {{ store.isArabic ? 'لا توجد عقارات مرتبطة.' : 'No associated properties.' }}
+            </div>
+            <ul v-else class="prop-list">
+              <li v-for="property in statement.properties.list" :key="property.id">
+                <router-link :to="`/properties/${property.id}`" @click="closeStatement">
+                  {{ property.referenceNumber }} — {{ property.title }} ({{ property.status }})
+                </router-link>
+                <span v-if="!statement.financialsRestricted && property.price !== undefined">
+                  {{ property.price }} {{ property.currency }}
+                </span>
+              </li>
+            </ul>
+          </section>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-quiet" type="button" :disabled="!statement" @click="exportStatementCsv">
+            <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
+          </button>
+          <button class="btn btn-primary" type="button" @click="closeStatement">{{ store.isArabic ? 'إغلاق' : 'Close' }}</button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -125,7 +212,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { useStore } from '@/stores'
-import type { Owner } from '@/types'
+import { ownerStatementCsv } from '@/utils/ownerStatementCsv'
+import type { Owner, OwnerStatement } from '@/types'
 
 const store = useStore()
 const rows = ref<Owner[]>([])
@@ -140,6 +228,11 @@ const includeInactive = ref(false)
 const page = ref(1)
 const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
 const selected = ref<Owner | null>(null)
+const statementOpen = ref(false)
+const statementOwner = ref<Owner | null>(null)
+const statement = ref<OwnerStatement | null>(null)
+const statementLoading = ref(false)
+const statementError = ref('')
 
 const emptyForm = () => ({
   firstName: '', lastName: '', companyName: '', email: '', phone: '', address: '', city: '', country: '', notes: '', isActive: true
@@ -225,6 +318,41 @@ async function openDetails(row: Owner): Promise<void> {
   }
 }
 
+async function openStatement(row: Owner): Promise<void> {
+  selected.value = null
+  statementOwner.value = row
+  statement.value = null
+  statementError.value = ''
+  statementOpen.value = true
+  statementLoading.value = true
+  try {
+    statement.value = (await apiGet<OwnerStatement>(`/owners/${row.id}/statement`)).data
+  } catch (e) {
+    statementError.value = errorMessage(e)
+  } finally {
+    statementLoading.value = false
+  }
+}
+
+function closeStatement(): void {
+  statementOpen.value = false
+  statementOwner.value = null
+  statement.value = null
+}
+
+function exportStatementCsv(): void {
+  if (!statement.value) return
+  const csv = ownerStatementCsv(statement.value)
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `owner-statement-${statement.value.owner.id}.csv`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function archiveOwner(row: Owner): Promise<void> {
   if (!window.confirm(store.isArabic ? 'أرشفة هذا المالك؟ لن تُحذف الروابط التاريخية.' : 'Archive this owner? Historical property links will be preserved.')) return
   try { await apiDeleteSafe(`/owners/${row.id}`); await load(page.value) } catch (e) { store.error = errorMessage(e) }
@@ -281,5 +409,20 @@ input, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem
 .pager button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer; }
 .prop-list { margin: 0; padding-inline-start: 1.2rem; display: flex; flex-direction: column; gap: 0.35rem; }
 .prop-list a { color: #4f46e5; text-decoration: none; }
-@media (max-width: 640px) { .modal-body.details { grid-template-columns: 1fr; } .search input { min-width: 140px; } }
+.statement-modal { width: min(100%, 880px); }
+.statement-subtitle { padding: 0.8rem 1.2rem 0; }
+.statement-body { display: flex; flex-direction: column; gap: 1.1rem; }
+.summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.8rem; }
+.summary-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 0.8rem 1rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.summary-card span { color: #6b7280; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.summary-card strong { font-size: 1.35rem; color: #4338ca; }
+.summary-card small { color: #6b7280; font-size: 0.72rem; }
+.statement-section h3 { margin: 0 0 0.6rem; font-size: 0.95rem; }
+.statement-table { border: 1px solid #e5e7eb; border-radius: 10px; }
+.statement-table th { white-space: nowrap; }
+.statement-table td { white-space: nowrap; }
+.notice { background: #fffbeb; color: #92400e; border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.82rem; margin: 0; }
+.inline-error { margin: 1rem 1.2rem; }
+.prop-list li { display: flex; justify-content: space-between; gap: 0.75rem; }
+@media (max-width: 640px) { .modal-body.details { grid-template-columns: 1fr; } .search input { min-width: 140px; } .summary-cards { grid-template-columns: 1fr; } }
 </style>

@@ -542,6 +542,7 @@ model Payment {
   exchangeRate   Decimal?      @db.Decimal(20, 8)
   baseAmount     Decimal?      @db.Decimal(14, 2)
   paidAt         DateTime?
+  dueAt          DateTime?
   createdById    String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -552,6 +553,7 @@ model Payment {
 
   @@unique([dealId, reference])
   @@index([dealId])
+  @@index([dealId, dueAt])
   @@index([status])
   @@index([createdAt])
 }
@@ -573,16 +575,20 @@ model Expense {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
+  notes            String?
+  maintenanceRequestId String?   @unique
 
   property    Property? @relation(fields: [propertyId], references: [id])
   deal        Deal?     @relation(fields: [dealId], references: [id])
   responsible User?     @relation(fields: [responsibleId], references: [id])
+  maintenanceRequest MaintenanceRequest? @relation("MaintenanceExpense", fields: [maintenanceRequestId], references: [id])
   documents   Document[]
 
   @@index([propertyId])
   @@index([dealId])
   @@index([status])
   @@index([spentAt])
+  @@index([maintenanceRequestId])
 }
 
 model Commission {
@@ -725,6 +731,7 @@ model MaintenanceRequest {
   property     Property     @relation(fields: [propertyId], references: [id])
   assignedTo   User?        @relation("MaintenanceAssignee", fields: [assignedToId], references: [id])
   createdBy    User?        @relation("MaintenanceCreator", fields: [createdById], references: [id])
+  expenses     Expense[]    @relation("MaintenanceExpense")
 
   @@index([organizationId])
   @@index([propertyId])

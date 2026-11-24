@@ -16,6 +16,7 @@ import { dateValue } from '../utils/validation'
 import { sumMoney } from '../utils/money'
 import { appointmentScope } from '../utils/appointments'
 import { summarizeCurrencyAmounts } from '../utils/fx'
+import { buildFunnelMetrics, uncontactedLeadCsv, uncontactedLeadWhere } from '../utils/reportMetrics'
 
 const router = Router()
 router.use(authMiddleware, requireRole(REPORT_ROLES))
@@ -33,6 +34,57 @@ function dateRange(query: Record<string, unknown>): DateRange {
 
 function moneyString(value: Prisma.Decimal | null | undefined): string {
   return value ? value.toString() : '0.00'
+}
+
+async function funnelAndSla(organizationId: string): Promise<Record<string, unknown>> {
+  const now = new Date()
+  const [leadRows, dealRows, uncontactedWhere] = [
+    await prisma.lead.groupBy({
+      by: ['status'],
+      where: { deletedAt: null, ...leadScope(organizationId) },
+      _count: { _all: true }
+    }),
+    await prisma.deal.groupBy({
+      by: ['status'],
+      where: { organizationId, deletedAt: null },
+      _count: { _all: true }
+    }),
+    uncontactedLeadWhere(organizationId, { now })
+  ]
+  const leadCounts: Record<string, number> = {}
+  const dealCounts: Record<string, number> = {}
+  for (const row of leadRows) leadCounts[row.status] = row._count._all
+  for (const row of dealRows) dealCounts[row.status] = row._count._all
+
+  const [uncontactedCount, uncontacted] = await Promise.all([
+    prisma.lead.count({ where: uncontactedWhere }),
+    prisma.lead.findMany({
+      where: uncontactedWhere,
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+        assignedTo: { select: { email: true } }
+      }
+    })
+  ])
+
+  return {
+    funnel: buildFunnelMetrics({ leadCounts, dealCounts }),
+    sla: {
+      uncontactedCount,
+      hours: 24,
+      uncontactedLeads: uncontacted.map((lead) => ({
+        ...lead,
+        ageHours: Math.max(0, Math.floor((now.getTime() - lead.createdAt.getTime()) / 3600000))
+      }))
+    }
+  }
 }
 
 router.get('/summary', async (req, res, next) => {
@@ -57,6 +109,7 @@ router.get('/summary', async (req, res, next) => {
       prisma.property.count({ where: propertyWhere }),
       prisma.deal.findMany({
         where: dealWhere,
+        take: 10000,
         select: { status: true }
       }),
       prisma.payment.groupBy({
@@ -109,9 +162,11 @@ router.get('/summary', async (req, res, next) => {
     const activeDeals = dealCounts.filter((deal) => deal.status === DealStatus.ACTIVE || deal.status === DealStatus.PENDING).length
     const completedDeals = dealCounts.filter((deal) => deal.status === DealStatus.COMPLETED).length
 
+    const funnelSla = await funnelAndSla(organizationId)
     res.json({
       success: true,
       data: {
+        ...funnelSla,
         properties: {
           total: propertyCounts,
           available,
@@ -254,9 +309,11 @@ router.get('/team', async (req, res, next) => {
         _count: { _all: true }
       })
     ])
+    const funnelSla = await funnelAndSla(organizationId)
     res.json({
       success: true,
       data: {
+        ...funnelSla,
         deals: deals.map((row) => ({
           userId: row.userId,
           currency: row.currency,
@@ -268,6 +325,34 @@ router.get('/team', async (req, res, next) => {
         maintenanceStatuses: Object.values(MaintenanceStatus)
       }
     })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/uncontacted-leads', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const now = new Date()
+    const rows = await prisma.lead.findMany({
+      where: uncontactedLeadWhere(organizationId, { now }),
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        createdAt: true,
+        assignedTo: { select: { email: true } }
+      }
+    })
+    const csv = uncontactedLeadCsv(rows, now)
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="uncontacted-leads-${now.toISOString().slice(0, 10)}.csv"`)
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.send(`\uFEFF${csv}`)
   } catch (error) {
     next(error)
   }

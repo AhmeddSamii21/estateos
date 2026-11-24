@@ -6,6 +6,19 @@ import { createError } from '../middleware/errorHandler'
 import { MANAGEMENT_ROLES, organizationIdOf, ownerReadScope, userIdOf } from '../utils/scope'
 import { booleanValue, optionalString, pagination } from '../utils/validation'
 import { logAudit } from '../utils/audit'
+import {
+  buildOwnerStatement,
+  canViewOwnerFinancials,
+  ownerStatementDealWhere,
+  ownerStatementExpenseWhere,
+  ownerStatementOwnerWhere,
+  ownerStatementPaymentWhere,
+  ownerStatementPropertyWhere,
+  type StatementDeal,
+  type StatementExpense,
+  type StatementPayment,
+  type StatementProperty
+} from '../utils/ownerStatement'
 
 const router = Router()
 router.use(authMiddleware)
@@ -49,6 +62,83 @@ function findWritableOwner(id: string, organizationId: string) {
     where: { id, organizationId, deletedAt: null }
   })
 }
+
+/**
+ * Read-only owner statement. The owner itself is resolved with ownerReadScope
+ * (legacy null-org owners are visible only through a local property link), and
+ * every related row is scoped to the viewer's organization. Financial amounts
+ * are queried only for finance roles; everyone else receives counts and an
+ * explicit financialsRestricted flag instead of redacted zero amounts.
+ */
+router.get('/:id/statement', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const id = String(req.params.id)
+    const includeFinancials = canViewOwnerFinancials(req.user?.role)
+
+    const owner = await prisma.owner.findFirst({
+      where: ownerStatementOwnerWhere(organizationId, id),
+      select: { id: true, firstName: true, lastName: true, companyName: true }
+    })
+    if (!owner) throw createError('Owner not found', 404)
+
+    const properties = await prisma.property.findMany({
+      where: ownerStatementPropertyWhere(organizationId, id),
+      select: {
+        id: true, title: true, referenceNumber: true, status: true, city: true,
+        price: true, currency: true, isActive: true
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 1000
+    })
+    const propertyIds = properties.map((property) => property.id)
+
+    const deals = propertyIds.length
+      ? await prisma.deal.findMany({
+          where: ownerStatementDealWhere(organizationId, propertyIds),
+          select: includeFinancials
+            ? { id: true, status: true, type: true, amount: true, currency: true }
+            : { id: true, status: true, type: true },
+          orderBy: { createdAt: 'desc' },
+          take: 5000
+        })
+      : []
+    const dealIds = deals.map((deal) => deal.id)
+
+    const payments: StatementPayment[] = includeFinancials && dealIds.length
+      ? (await prisma.payment.findMany({
+          where: ownerStatementPaymentWhere(dealIds),
+          select: { id: true, status: true, amount: true, currency: true },
+          take: 5000
+        })).map((payment) => ({ ...payment }))
+      : []
+    const expenses: StatementExpense[] = includeFinancials && propertyIds.length
+      ? (await prisma.expense.findMany({
+          where: ownerStatementExpenseWhere(propertyIds),
+          select: { id: true, status: true, amount: true, currency: true },
+          take: 5000
+        })).map((expense) => ({ ...expense }))
+      : []
+
+    const propertyRows: StatementProperty[] = properties.map((property) => ({ ...property }))
+    const dealRows: StatementDeal[] = deals.map((deal) => ({
+      id: deal.id,
+      status: deal.status,
+      type: deal.type,
+      amount: 'amount' in deal ? deal.amount : 0,
+      currency: 'currency' in deal ? deal.currency : null
+    }))
+
+    const statement = buildOwnerStatement(
+      { id: owner.id, displayName: ownerLabel(owner) },
+      { properties: propertyRows, deals: dealRows, payments, expenses },
+      { includeFinancials }
+    )
+    res.json({ success: true, data: statement })
+  } catch (error) {
+    next(error)
+  }
+})
 
 router.get('/', async (req, res, next) => {
   try {

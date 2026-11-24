@@ -8,6 +8,9 @@
           {{ store.isArabic ? 'مشاركة العقار' : 'Share Property' }}
         </button>
         <template v-if="property && (store.canManage || isAssignedAgent)">
+          <button class="btn btn-quiet" type="button" @click="onDuplicate">
+            <i class="fas fa-copy"></i> {{ store.isArabic ? 'نسخ العقار' : 'Duplicate Property' }}
+          </button>
           <router-link class="btn btn-quiet" :to="`/properties/${property.id}/edit`">
             <i class="fas fa-pen"></i> {{ store.isArabic ? 'تعديل' : 'Edit' }}
           </router-link>
@@ -94,6 +97,29 @@
           <div><dt>{{ store.isArabic ? 'المالك' : 'Owner' }}</dt><dd>{{ ownerLabel(property.owner) }}</dd></div>
           <div><dt>{{ store.isArabic ? 'الوكيل' : 'Agent' }}</dt><dd>{{ property.assignedAgent?.firstName || property.assignedAgent?.email || '—' }}</dd></div>
         </dl>
+      </section>
+
+      <section class="panel price-history-panel">
+        <div class="panel-head">
+          <h2>{{ store.isArabic ? 'تاريخ السعر' : 'Price History' }}</h2>
+          <span class="tag">{{ priceHistory.length }}</span>
+        </div>
+        <div v-if="!priceHistory.length" class="empty">
+          {{ store.isArabic ? 'لا توجد تغييرات في السعر.' : 'No price changes recorded.' }}
+        </div>
+        <ol v-else class="price-timeline">
+          <li v-for="entry in priceHistory" :key="entry.id">
+            <div class="price-change-head">
+              <strong>{{ money(entry.oldPrice, entry.oldCurrency) }}</strong>
+              <span aria-hidden="true">→</span>
+              <strong class="new-price">{{ money(entry.newPrice, entry.newCurrency) }}</strong>
+              <time :datetime="entry.timestamp">{{ formatDate(entry.timestamp) }}</time>
+            </div>
+            <p v-if="entry.oldCurrency !== entry.newCurrency" class="currency-change">
+              {{ store.isArabic ? 'تغيّر العملة' : 'Currency changed' }}: {{ entry.oldCurrency }} → {{ entry.newCurrency }}
+            </p>
+          </li>
+        </ol>
       </section>
 
       <section v-if="property.description || property.operationalNotes" class="panel">
@@ -187,6 +213,8 @@ import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { downloadDocument } from '@/utils/documents'
 import { loadPropertyImageObjectUrl } from '@/utils/propertyImages'
 import { buildClientPropertySummary } from '@/utils/propertyShare'
+import { parsePriceHistory } from '@/utils/priceHistory'
+import { DUPLICATE_DRAFT_KEY, DUPLICATE_QUERY_FLAG } from '@/utils/propertyDuplicate'
 import { useStore } from '@/stores'
 import type { DocumentRecord, PropertyDetail, PropertyImage, PropertyShareLink } from '@/types'
 
@@ -210,6 +238,7 @@ const imageObjectUrls = ref<Record<string, string>>({})
 const recordId = computed(() => props.id || String(route.params.id || ''))
 onMounted(() => void store.fetchProperty(recordId.value))
 const property = computed<PropertyDetail | null>(() => store.currentProperty)
+const priceHistory = computed(() => parsePriceHistory(property.value?.activities))
 
 const isAssignedAgent = computed(() =>
   Boolean(store.user && property.value && store.user.role === 'AGENT' && property.value.assignedAgentId === store.user.id)
@@ -386,6 +415,20 @@ async function onDownload(id: string, name: string): Promise<void> {
   }
 }
 
+async function onDuplicate(): Promise<void> {
+  if (!property.value) return
+  actionError.value = ''
+  try {
+    // The server returns a sanitized allowlist draft; the form reads it from
+    // session storage after navigating to /properties/new.
+    const response = await apiGet<Record<string, unknown>>(`/properties/${property.value.id}/duplicate-draft`)
+    sessionStorage.setItem(DUPLICATE_DRAFT_KEY, JSON.stringify(response.data))
+    await router.push({ path: '/properties/new', query: { [DUPLICATE_QUERY_FLAG]: '1' } })
+  } catch (error) {
+    actionError.value = errorMessage(error)
+  }
+}
+
 async function onDelete(): Promise<void> {
   if (!property.value) return
   if (!confirmDelete.value) {
@@ -555,6 +598,14 @@ h2 { font-size: 1.05rem; margin: 0 0 0.9rem; }
 .timeline li { padding: 0.6rem 0 0.6rem 1rem; border-inline-start: 2px solid #c7d2fe; position: relative; font-size: 0.86rem; }
 .timeline li span { color: #6b7280; font-size: 0.76rem; margin-inline-start: 0.6rem; }
 .timeline li p { margin: 0.2rem 0 0; color: #4b5563; }
+.price-timeline { list-style: none; margin: 0; padding: 0; }
+.price-timeline li { padding: 0.55rem 0 0.55rem 0.9rem; border-inline-start: 2px solid #c7d2fe; }
+.price-timeline li:last-child { border-inline-start-color: transparent; }
+.price-change-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; font-size: 0.9rem; }
+.price-change-head strong { color: #6b7280; text-decoration: line-through; }
+.price-change-head .new-price { color: #166534; text-decoration: none; }
+.price-change-head time { color: #6b7280; font-size: 0.76rem; margin-inline-start: auto; }
+.currency-change { margin: 0.2rem 0 0; font-size: 0.76rem; color: #92400e; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .notice { background: #ecfdf5; color: #065f46; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
 .share-fallback textarea { width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 8px; padding: 0.7rem; font-family: inherit; font-size: 0.84rem; resize: vertical; }

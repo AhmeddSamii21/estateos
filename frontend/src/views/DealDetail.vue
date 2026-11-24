@@ -80,6 +80,78 @@
 
       <template v-if="store.canManageFinance">
         <section class="panel">
+          <h2>Installment calculator &amp; generator</h2>
+          <form class="form-grid" @submit.prevent="generateInstallments">
+            <label>
+              <span>{{ store.isArabic ? 'الدفعة المقدمة' : 'Down payment' }}</span>
+              <input v-model="installmentForm.downPayment" type="number" min="0" step="0.01" />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'عدد الأقساط' : 'Installment count' }}</span>
+              <input v-model="installmentForm.installmentCount" type="number" min="1" max="120" />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'التكرار' : 'Frequency' }}</span>
+              <select v-model="installmentForm.frequency">
+                <option v-for="frequency in INSTALLMENT_FREQUENCIES" :key="frequency" :value="frequency">
+                  {{ label(frequency) }}
+                </option>
+              </select>
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'تاريخ أول استحقاق' : 'First due date' }}</span>
+              <input v-model="installmentForm.firstDueDate" type="date" />
+            </label>
+            <label>
+              <span>{{ store.isArabic ? 'مفتاح الدفعة (اختياري)' : 'Batch key (optional)' }}</span>
+              <input v-model="installmentForm.batchKey" />
+            </label>
+            <button class="btn btn-primary" type="submit" :disabled="installmentBusy || !installmentPreview">
+              {{ installmentBusy ? '…' : (store.isArabic ? 'إنشاء الجدول' : 'Generate schedule') }}
+            </button>
+          </form>
+
+          <div v-if="installmentWarning" class="installment-warning" role="alert">{{ installmentWarning }}</div>
+          <div v-if="installmentError" class="error" role="alert">{{ installmentError }}</div>
+          <div v-if="actionMessage" class="notice" role="status">{{ actionMessage }}</div>
+
+          <template v-if="installmentPreview">
+            <div class="summary">
+              <div>
+                <span>{{ store.isArabic ? 'المبلغ الممول' : 'Financed amount' }}</span>
+                <strong>{{ money(installmentPreview.financedAmount, deal.currency) }}</strong>
+              </div>
+              <div>
+                <span>{{ store.isArabic ? 'عدد الأقساط' : 'Installments' }}</span>
+                <strong>{{ installmentPreview.installmentCount }}</strong>
+              </div>
+              <div>
+                <span>{{ store.isArabic ? 'الإجمالي' : 'Total' }}</span>
+                <strong>{{ money(installmentPreview.total, deal.currency) }}</strong>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th>
+                    <th>{{ store.isArabic ? 'تاريخ الاستحقاق' : 'Due date' }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in installmentPreview.installments" :key="row.index">
+                    <td>{{ row.index }}</td>
+                    <td>{{ money(row.amount, deal.currency) }}</td>
+                    <td>{{ formatInstallmentDate(row.dueAt) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+        </section>
+
+        <section class="panel">
           <h2>{{ store.isArabic ? 'ملخص الدفعات' : 'Payment summary' }}</h2>
           <div v-if="summary" class="summary">
             <div><span>{{ store.isArabic ? 'المستلم' : 'Received' }}</span><strong>{{ money(summary.received, summary.currency) }}</strong></div>
@@ -123,13 +195,14 @@
 
           <div v-if="!deal.payments?.length" class="empty">{{ store.isArabic ? 'لا توجد دفعات.' : 'No payments recorded.' }}</div>
           <table v-else>
-            <thead><tr><th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th><th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th><th>{{ store.isArabic ? 'الطريقة' : 'Method' }}</th><th>{{ store.isArabic ? 'التاريخ' : 'Date' }}</th></tr></thead>
+            <thead><tr><th>{{ store.isArabic ? 'المبلغ' : 'Amount' }}</th><th>{{ store.isArabic ? 'الحالة' : 'Status' }}</th><th>{{ store.isArabic ? 'الطريقة' : 'Method' }}</th><th>{{ store.isArabic ? 'التاريخ' : 'Date' }}</th><th>{{ store.isArabic ? 'الاستحقاق' : 'Due date' }}</th></tr></thead>
             <tbody>
-              <tr v-for="payment in deal.payments" :key="payment.id">
+              <tr v-for="payment in paymentsWithDueAt" :key="payment.id">
                 <td>{{ money(payment.amount, payment.currency) }}</td>
                 <td>{{ label(payment.status) }}</td>
                 <td>{{ payment.method || '—' }}</td>
                 <td>{{ formatDate(payment.paidAt || payment.createdAt) }}</td>
+                <td>{{ formatDate(payment.dueAt) }}</td>
               </tr>
             </tbody>
           </table>
@@ -203,9 +276,17 @@ import { apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
 import { dealTransitions } from '@/config/resources'
 import { downloadDocument } from '@/utils/documents'
+import {
+  formatInstallmentDate,
+  INSTALLMENT_FREQUENCIES,
+  previewInstallments,
+  type InstallmentFrequency
+} from '@/utils/installments'
 import { daysUntilLeaseEnd, leaseRenewalState, type LeaseRenewalState } from '@/utils/leases'
 import { useStore } from '@/stores'
-import type { Deal, MoneyValue, PaymentSummary } from '@/types'
+import type { Deal, MoneyValue, Payment, PaymentSummary } from '@/types'
+
+type PaymentWithDueAt = Payment & { dueAt?: string | null }
 
 const store = useStore()
 const route = useRoute()
@@ -214,6 +295,9 @@ const summary = ref<PaymentSummary | null>(null)
 const loading = ref(true)
 const saving = ref(false)
 const actionError = ref('')
+const actionMessage = ref('')
+const installmentBusy = ref(false)
+const installmentError = ref('')
 
 const paymentStatuses = ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED']
 const commissionStatuses = ['PENDING', 'APPROVED', 'PAID', 'CANCELLED']
@@ -230,6 +314,41 @@ const paymentForm = reactive({
 
 const commissionForm = reactive({ amount: '', currency: '', rate: '' })
 const leaseForm = reactive({ leaseStartAt: '', leaseEndAt: '', renewalNoticeDays: '30' })
+const installmentForm = reactive({
+  downPayment: '',
+  installmentCount: '',
+  frequency: 'MONTHLY' as InstallmentFrequency,
+  firstDueDate: '',
+  batchKey: ''
+})
+
+const paymentsWithDueAt = computed<PaymentWithDueAt[]>(() => (deal.value?.payments ?? []) as PaymentWithDueAt[])
+
+const installmentState = computed(() => {
+  if (!deal.value || !installmentForm.installmentCount) return { preview: null, warning: '' }
+  const down = Number(installmentForm.downPayment || 0)
+  const amount = Number(deal.value.amount || 0)
+  if (!Number.isFinite(down) || down < 0) {
+    return { preview: null, warning: 'Enter a valid down payment.' }
+  }
+  if (down > amount) {
+    return { preview: null, warning: 'Down payment cannot exceed the deal amount.' }
+  }
+  try {
+    const preview = previewInstallments({
+      dealAmount: deal.value.amount,
+      downPayment: installmentForm.downPayment || 0,
+      installmentCount: installmentForm.installmentCount,
+      frequency: installmentForm.frequency,
+      firstDueDate: installmentForm.firstDueDate
+    })
+    return { preview, warning: '' }
+  } catch (error) {
+    return { preview: null, warning: error instanceof Error ? error.message : 'Invalid installment details.' }
+  }
+})
+const installmentPreview = computed(() => installmentState.value.preview)
+const installmentWarning = computed(() => installmentState.value.warning)
 
 const canEdit = computed(() => store.canManage || Boolean(store.user && deal.value && deal.value.userId === store.user.id))
 const isRental = computed(() => deal.value?.type === 'RENT')
@@ -275,6 +394,11 @@ async function load(): Promise<void> {
   try {
     const response = await apiGet<Deal>(`/deals/${id}`)
     deal.value = response.data
+    if (!installmentForm.firstDueDate) {
+      installmentForm.firstDueDate = response.data.dueAt
+        ? String(response.data.dueAt).slice(0, 10)
+        : new Date().toISOString().slice(0, 10)
+    }
     paymentForm.currency = response.data.currency || ''
     commissionForm.currency = response.data.currency || ''
     leaseForm.leaseStartAt = response.data.leaseStartAt ? String(response.data.leaseStartAt).slice(0, 10) : ''
@@ -417,6 +541,35 @@ async function onCommissionStatus(id: string, event: Event): Promise<void> {
   }
 }
 
+async function generateInstallments(): Promise<void> {
+  if (!deal.value || !installmentPreview.value) return
+  installmentBusy.value = true
+  installmentError.value = ''
+  actionMessage.value = ''
+  try {
+    const payload: Record<string, unknown> = {
+      downPayment: installmentForm.downPayment || 0,
+      installmentCount: Number(installmentForm.installmentCount),
+      frequency: installmentForm.frequency,
+      firstDueDate: installmentForm.firstDueDate
+    }
+    if (installmentForm.batchKey.trim()) payload.batchKey = installmentForm.batchKey.trim()
+    const response = await apiPost<{ payments?: Array<{ id: string }>; installmentCount?: number }>(
+      `/deals/${deal.value.id}/installments`,
+      payload
+    )
+    const count = response.data?.installmentCount ?? response.data?.payments?.length ?? 0
+    actionMessage.value = store.isArabic
+      ? `تم إنشاء ${count} قسط.`
+      : `Generated ${count} installment(s).`
+    await load()
+  } catch (error) {
+    installmentError.value = errorMessage(error)
+  } finally {
+    installmentBusy.value = false
+  }
+}
+
 async function onDownload(id: string, name: string): Promise<void> {
   try {
     await downloadDocument(id, name)
@@ -475,4 +628,9 @@ th { color: #6b7280; font-size: 0.72rem; text-transform: uppercase; }
 .timeline li span { color: #6b7280; font-size: 0.76rem; margin-inline-start: 0.6rem; }
 .timeline li p { margin: 0.2rem 0 0; }
 .error { background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.85rem; }
+.installment-warning { background: #fffbeb; color: #92400e; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
+.notice { background: #ecfdf5; color: #166534; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.84rem; margin-bottom: 0.8rem; }
+.table-wrap { max-height: 260px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 0.8rem; }
+.table-wrap th { position: sticky; top: 0; background: #f9fafb; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

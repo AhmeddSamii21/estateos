@@ -33,6 +33,9 @@
         <button class="btn btn-quiet" type="button" :disabled="exporting" @click="onExport">
           <i class="fas fa-file-csv"></i> {{ store.isArabic ? 'تصدير CSV' : 'Export CSV' }}
         </button>
+        <button v-if="isLeads" class="btn btn-quiet" type="button" @click="openImport">
+          <i class="fas fa-file-arrow-up"></i> {{ store.isArabic ? 'استيراد CSV' : 'Import CSV' }}
+        </button>
         <button class="btn btn-primary" type="button" @click="openCreate">
           <i class="fas fa-plus"></i> {{ store.isArabic ? 'إضافة' : 'Add' }}
         </button>
@@ -45,6 +48,7 @@
         <li v-for="conflict in conflictWarning.conflicts" :key="conflict.id">{{ conflictLabel(conflict) }}</li>
       </ul>
     </div>
+    <div v-if="importMessage && !importOpen" class="import-summary" role="status">{{ importMessage }}</div>
 
     <div v-if="loading" class="state">{{ store.isArabic ? 'جارٍ التحميل…' : 'Loading…' }}</div>
     <div v-else-if="!rows.length" class="state">
@@ -106,6 +110,12 @@
                     </small>
                   </span>
                 </template>
+                <template v-else-if="isMaintenance && column.key === 'cost'">
+                  <span class="expense-tag" :class="linkedExpenseId(row) ? 'linked' : 'none'">
+                    {{ linkedExpenseLabel(row) }}
+                  </span>
+                  <small class="cost-value">{{ display(row[column.key], column, row) }}</small>
+                </template>
                 <template v-else>{{ display(row[column.key], column, row) }}</template>
               </td>
               <td class="actions-col">
@@ -130,6 +140,9 @@
                 <button v-if="isLeads" type="button" class="link" @click="openFollowUp(row)">
                   {{ store.isArabic ? 'متابعة' : 'Follow up' }}
                 </button>
+                <router-link v-if="isMaintenance && linkedExpenseId(row)" class="link" to="/finance/expenses">
+                  {{ store.isArabic ? 'المصروف' : 'Expense' }}
+                </router-link>
                 <button type="button" class="link" @click="openEdit(row)">{{ store.isArabic ? 'تعديل' : 'Edit' }}</button>
                 <button v-if="canDelete" type="button" class="link danger" @click="onDelete(row)">
                   {{ store.isArabic ? 'حذف' : 'Delete' }}
@@ -168,6 +181,10 @@
               <input v-model="form[field.key]" type="checkbox" />
               <span>{{ field.label }}</span>
             </template>
+          </label>
+          <label v-if="showRecordExpense" class="checkbox record-expense">
+            <input v-model="recordExpense" type="checkbox" />
+            <span>{{ store.isArabic ? 'تسجيل مصروف عند الإكمال' : 'Record expense on completion' }}</span>
           </label>
           <div v-if="formError" class="error" role="alert">{{ formError }}</div>
         </div>
@@ -230,13 +247,27 @@
         </div>
       </form>
     </div>
+
+    <ImportCsvModal
+      :open="importOpen"
+      kind="leads"
+      :busy="importBusy"
+      :preview="importPreview"
+      :error="importError"
+      :result-message="importMessage"
+      @close="importOpen = false"
+      @preview="onImportPreview"
+      @commit="onImportCommit"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiDelete, apiGet, apiPatch, apiPost, errorMessage } from '@/api/client'
 import ActivityTimeline from '@/components/ActivityTimeline.vue'
+import ImportCsvModal from '@/components/ImportCsvModal.vue'
 import {
   appointmentStatus,
   dealStatus,
@@ -247,6 +278,7 @@ import {
   type ResourceConfig
 } from '@/config/resources'
 import { downloadCsv, type CsvRow } from '@/utils/csv'
+import type { CsvImportPreview } from '@/utils/csvImport'
 import { followUpBucket, type FollowUpBucket } from '@/utils/followUps'
 import { useStore } from '@/stores'
 import type { ApiWarning, AppointmentConflictInfo } from '@/types'
@@ -258,6 +290,7 @@ const config = computed<ResourceConfig>(() => resources[props.resource] || resou
 const isAppointments = computed(() => props.resource === 'appointments')
 const isDeals = computed(() => props.resource === 'deals')
 const isLeads = computed(() => props.resource === 'leads')
+const isMaintenance = computed(() => props.resource === 'maintenance')
 
 type Row = Record<string, unknown> & { id: string }
 const rows = ref<Row[]>([])
@@ -266,6 +299,8 @@ const saving = ref(false)
 const formOpen = ref(false)
 const editingId = ref<string | null>(null)
 const formError = ref('')
+const recordExpense = ref(true)
+const maintenanceWasCompleted = ref(false)
 const activityOpen = ref(false)
 const activityId = ref('')
 const matchesOpen = ref(false)
@@ -285,6 +320,11 @@ const followUpBody = ref('')
 const followUpNext = ref('')
 const followUpSaving = ref(false)
 const followUpError = ref('')
+const importOpen = ref(false)
+const importBusy = ref(false)
+const importPreview = ref<CsvImportPreview | null>(null)
+const importError = ref('')
+const importMessage = ref('')
 
 const visibleFields = computed<FieldConfig[]>(() =>
   config.value.fields
@@ -297,6 +337,13 @@ const visibleFields = computed<FieldConfig[]>(() =>
       return { ...field, options }
     })
     .filter((field) => !field.createOnly || !editingId.value)
+)
+
+const showRecordExpense = computed(() =>
+  isMaintenance.value &&
+  Boolean(editingId.value) &&
+  String(form.status || '') === 'COMPLETED' &&
+  !maintenanceWasCompleted.value
 )
 
 const groupedRows = computed(() => {
@@ -364,6 +411,8 @@ function openCreate(prefill: Record<string, unknown> = {}): void {
   if (props.resource === 'users' && store.user) form.organizationId = store.user.organizationId
   formError.value = ''
   conflictWarning.value = null
+  recordExpense.value = true
+  maintenanceWasCompleted.value = false
   formOpen.value = true
 }
 
@@ -400,6 +449,8 @@ function openEdit(row: Row): void {
   })
   formError.value = ''
   conflictWarning.value = null
+  recordExpense.value = true
+  maintenanceWasCompleted.value = isMaintenance.value && String(row.status || '') === 'COMPLETED'
   formOpen.value = true
 }
 
@@ -415,6 +466,67 @@ function openActivity(row: Row): void {
 
 function leadLabel(lead: Row): string {
   return `${lead.firstName || ''}${lead.lastName ? ` ${lead.lastName}` : ''}`.trim() || String(lead.email || 'Lead')
+}
+
+function linkedExpenseId(row: Row): string | null {
+  const value = row.linkedExpenseId ?? row.expenseId
+  return value === null || value === undefined || value === '' ? null : String(value)
+}
+
+function linkedExpenseLabel(row: Row): string {
+  if (!linkedExpenseId(row)) return store.isArabic ? 'بدون مصروف' : 'No expense'
+  const status = typeof row.linkedExpenseStatus === 'string' && row.linkedExpenseStatus.trim()
+    ? readableStatus(row.linkedExpenseStatus)
+    : null
+  return status || (store.isArabic ? 'مصروف مرتبط' : 'Linked expense')
+}
+
+type ImportPayload = { csv: string; dryRun: boolean }
+
+function csvOf(payload: ImportPayload | string): string {
+  return typeof payload === 'string' ? payload : payload.csv
+}
+
+function openImport(): void {
+  importPreview.value = null
+  importError.value = ''
+  importMessage.value = ''
+  importOpen.value = true
+}
+
+async function onImportPreview(payload: ImportPayload | string): Promise<void> {
+  const csv = csvOf(payload)
+  importBusy.value = true
+  importError.value = ''
+  importMessage.value = ''
+  try {
+    const response = await apiPost<{ preview: CsvImportPreview }>('/leads/import', { csv, dryRun: true })
+    importPreview.value = response.data?.preview ?? null
+  } catch (error) {
+    importPreview.value = null
+    importError.value = errorMessage(error)
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function onImportCommit(payload: ImportPayload | string): Promise<void> {
+  const csv = csvOf(payload)
+  importBusy.value = true
+  importError.value = ''
+  importMessage.value = ''
+  try {
+    const response = await apiPost<{ created?: number }>('/leads/import', { csv, dryRun: false })
+    importMessage.value = store.isArabic
+      ? `تم استيراد ${response.data?.created ?? 0} عميل محتمل.`
+      : `Created ${response.data?.created ?? 0} leads.`
+    await load()
+    importOpen.value = false
+  } catch (error) {
+    importError.value = errorMessage(error)
+  } finally {
+    importBusy.value = false
+  }
 }
 
 function followUpBucketOf(value: unknown): FollowUpBucket | null {
@@ -510,6 +622,7 @@ function buildPayload(): Record<string, unknown> {
   if (props.resource === 'users' && store.user && !editingId.value) {
     payload.organizationId = store.user.organizationId
   }
+  if (showRecordExpense.value) payload.recordExpense = recordExpense.value
   return payload
 }
 
@@ -694,6 +807,11 @@ h2 { margin: 0; font-size: 1.15rem; }
 .follow-up-overdue { background: #fee2e2; color: #991b1b; }
 .follow-up-today { background: #fef3c7; color: #92400e; }
 .follow-up-lead { margin: 0 0 0.4rem; font-weight: 600; color: #111827; }
+.import-summary { background: #ecfdf5; color: #166534; border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.84rem; }
+.expense-tag { display: inline-block; border-radius: 999px; padding: 0.12rem 0.45rem; font-size: 0.68rem; margin-inline-end: 0.35rem; }
+.expense-tag.linked { background: #dcfce7; color: #166534; }
+.expense-tag.none { background: #f3f4f6; color: #6b7280; }
+.cost-value { color: #374151; }
 .stage-filter { display: inline-flex; flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #374151; }
 .stage-filter select { padding: 0.4rem 0.5rem; font-size: 0.82rem; }
 .record-link { color: #4f46e5; font-weight: 600; text-decoration: none; }
@@ -725,6 +843,7 @@ th { background: #f9fafb; font-size: 0.74rem; color: #6b7280; text-transform: up
 .activity-full { grid-column: 1 / -1; }
 label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: #374151; }
 label.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
+.record-expense { grid-column: 1 / -1; }
 input, select, textarea { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.5rem 0.6rem; font-size: 0.88rem; font-family: inherit; }
 .error { grid-column: 1 / -1; background: #fef2f2; color: #991b1b; border-radius: 8px; padding: 0.6rem; font-size: 0.84rem; }
 .modal-actions { display: flex; gap: 0.6rem; padding: 1rem 1.2rem; border-top: 1px solid #eef2f7; }

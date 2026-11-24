@@ -10,6 +10,7 @@ export const errorHandler = (err: AppError, req: Request, res: Response, _next: 
 
   // Log operational errors without leaking secrets; only 5xx errors include a stack.
   console.error('Error:', {
+    requestId: req.requestId || 'unknown',
     message: err.message,
     statusCode,
     url: req.url,

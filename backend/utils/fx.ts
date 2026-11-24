@@ -73,7 +73,8 @@ export async function listExchangeRatesForOrg(organizationId: string) {
   const baseCurrency = await baseCurrencyOf(organizationId)
   const currencies = await prisma.currency.findMany({
     where: await currencyScope(organizationId),
-    orderBy: [{ isEnabled: 'desc' }, { code: 'asc' }]
+    orderBy: [{ isEnabled: 'desc' }, { code: 'asc' }],
+    take: 500
   })
   const rates = await prisma.exchangeRate.findMany({
     where: {
@@ -85,7 +86,8 @@ export async function listExchangeRatesForOrg(organizationId: string) {
       fromCurrency: { select: { id: true, code: true } },
       toCurrency: { select: { id: true, code: true } }
     },
-    orderBy: [{ effectiveAt: 'desc' }, { createdAt: 'desc' }]
+    orderBy: [{ effectiveAt: 'desc' }, { createdAt: 'desc' }],
+    take: 5000
   })
   const latest = latestRateMap(rates.map((r) => ({ fromCurrencyId: r.fromCurrencyId, toCurrencyId: r.toCurrencyId, rate: r.rate, effectiveAt: r.effectiveAt })))
   const byCode = new Map(currencies.map((c) => [c.code.toUpperCase(), c]))

@@ -161,12 +161,13 @@ export const useStore = defineStore('main', () => {
     error.value = null
   }
 
-  async function fetchNotifications(options: { limit?: number; unread?: boolean } = {}): Promise<void> {
+  async function fetchNotifications(options: { limit?: number; unread?: boolean; category?: string } = {}): Promise<void> {
     if (!token.value) return
     try {
       const params: Record<string, string | number | boolean> = {}
       if (options.limit) params.limit = options.limit
       if (options.unread) params.unread = true
+      if (options.category) params.category = options.category
       const response = await apiGet<AppNotification[]>('/notifications', { params })
       notifications.value = response.data ?? []
       const envelope = response as unknown as { unreadCount?: number }

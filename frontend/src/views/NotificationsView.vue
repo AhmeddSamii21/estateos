@@ -6,6 +6,13 @@
         <p class="muted">{{ store.unreadNotificationCount }} {{ store.isArabic ? 'غير مقروء' : 'unread' }}</p>
       </div>
       <div class="head-actions">
+        <label class="category-filter">
+          <span>{{ store.isArabic ? 'الفئة' : 'Category' }}</span>
+          <select v-model="category" @change="load">
+            <option value="">{{ store.isArabic ? 'الكل' : 'All' }}</option>
+            <option v-for="item in NOTIFICATION_CATEGORIES" :key="item" :value="item">{{ label(item) }}</option>
+          </select>
+        </label>
         <label class="toggle"><input v-model="unreadOnly" type="checkbox" @change="load" /> {{ store.isArabic ? 'غير المقروءة فقط' : 'Unread only' }}</label>
         <button class="btn btn-quiet" type="button" @click="markAll" :disabled="!store.unreadNotificationCount">
           {{ store.isArabic ? 'تحديد الكل كمقروء' : 'Mark all as read' }}
@@ -23,6 +30,9 @@
             <time>{{ formatDate(item.createdAt) }}</time>
           </div>
           <p>{{ item.message }}</p>
+          <span class="tag category-tag" :class="`category-${notificationCategoryOf(item.type).toLowerCase()}`">
+            {{ label(notificationCategoryOf(item.type)) }}
+          </span>
           <span v-if="item.type" class="tag">{{ label(item.type) }}</span>
         </button>
         <button v-if="!item.isRead" class="link" type="button" @click.stop="store.markNotificationRead(item.id)">
@@ -38,18 +48,31 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStore } from '@/stores'
 import type { AppNotification } from '@/types'
+import {
+  NOTIFICATION_CATEGORIES,
+  notificationCategoryOf,
+  resolveNotificationTarget,
+  type NotificationCategory
+} from '@/utils/notificationTargets'
+
+type NotificationWithTarget = AppNotification & { targetUrl?: string | null }
 
 const store = useStore()
 const router = useRouter()
 const loading = ref(false)
 const unreadOnly = ref(false)
+const category = ref<'' | NotificationCategory>('')
 
 onMounted(() => { void load() })
 
 async function load(): Promise<void> {
   loading.value = true
   try {
-    await store.fetchNotifications({ limit: 100, unread: unreadOnly.value })
+    await store.fetchNotifications({
+      limit: 100,
+      unread: unreadOnly.value,
+      category: category.value || undefined
+    })
   } finally {
     loading.value = false
   }
@@ -57,7 +80,14 @@ async function load(): Promise<void> {
 
 async function open(item: AppNotification): Promise<void> {
   if (!item.isRead) await store.markNotificationRead(item.id)
-  if (item.actionUrl) void router.push(item.actionUrl)
+  const notification = item as NotificationWithTarget
+  const target = resolveNotificationTarget({
+    entityType: notification.entityType,
+    entityId: notification.entityId,
+    actionUrl: notification.actionUrl,
+    targetUrl: notification.targetUrl
+  })
+  if (target) await router.push(target)
 }
 
 async function markAll(): Promise<void> {
@@ -82,6 +112,11 @@ function label(value: string): string {
 h1 { margin: 0; font-size: 1.5rem; }
 .muted { color: #6b7280; margin: 0.25rem 0 0; font-size: 0.85rem; }
 .toggle { font-size: 0.82rem; color: #374151; display: inline-flex; gap: 0.35rem; align-items: center; }
+.category-filter { font-size: 0.82rem; color: #374151; display: inline-flex; gap: 0.35rem; align-items: center; }
+.category-filter select { border: 1px solid #d1d5db; border-radius: 7px; padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+.category-tag { margin-inline-end: 0.4rem; }
+.category-finance { background: #fef3c7; color: #92400e; }
+.category-maintenance { background: #fee2e2; color: #991b1b; }
 .btn { border: 0; border-radius: 8px; padding: 0.55rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
 .btn-quiet { background: #f3f4f6; color: #374151; }
 .state { background: #fff; border-radius: 12px; padding: 3rem; text-align: center; color: #6b7280; }

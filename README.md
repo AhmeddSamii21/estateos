@@ -36,7 +36,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run all 77 automated tests (`node --test tests/**/*.test.js`) |
+| `npm test` | Run all 131 automated tests (`node --test tests/**/*.test.js`) |
 | `npm run verify` | Full gate: Prisma validate → typecheck (backend + frontend) → compile API → tests → production frontend build |
 | `npm run typecheck` | Type-check both backend and frontend without emitting files |
 | `npm run build:api` / `npm run build` | Compile Express API to `dist-backend/` / build Vue app to `dist/` |
@@ -45,7 +45,7 @@ Do not commit `.env`; it is excluded by `.gitignore`. `.env.example` is the safe
 | `npm run db:migrate` | `prisma migrate deploy` — apply pending checked-in migrations |
 | `npm run test:live` | Compile the API and run the live integration script in `scripts/` |
 
-Current verification status: **77 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
+Current verification status: **131 tests pass**, both typechecks pass, API compilation passes, and the production frontend build succeeds via `npm run verify`.
 
 ## What the application does
 
@@ -57,6 +57,15 @@ Current verification status: **77 tests pass**, both typechecks pass, API compil
 - **CSV export** — Available on Properties, Reports and the generic resource lists. The shared `downloadCsv` helper writes UTF-8 with a BOM (Arabic headers stay readable in Excel), CRLF line endings, quoted/escaped cells, and neutralizes spreadsheet formula injection. Property export pages through all filtered results.
 - **Share summary** — On Property Details, **Share Property** builds a plain-text, client-ready summary from listing fields only (title, reference, price, status, specifications, location, images and description). Owner/agent records, deals, finances, audit/activity, operational notes and other internal notes are deliberately excluded. It copies to the clipboard with a read-only preview fallback, and calls `POST /api/properties/:id/share-summary` to record an activity/audit entry. Both English and Arabic summaries are supported.
 - **Other modules** — Owners, appointments, documents (stored under `UPLOAD_PATH`, served through authenticated downloads; delete means archive with restore), maintenance requests, notifications, activity feed, reports/analytics, users and settings.
+
+## Delivery packages 5–10
+
+- **Package 5** — CSV export with UTF-8 BOM, CRLF, escaping and formula-injection protection; property export pages through all filtered results.
+- **Package 6** — lead follow-up buckets, lease renewal reminders and consolidated commission statements with historical FX snapshots.
+- **Package 7** — owner statements, property price history, sanitized property duplication and client-ready share summaries.
+- **Package 8** — CSV imports for properties/leads with dry-run validation, deal installment schedules with `Payment.dueAt`, and safe, category-filtered notification targets.
+- **Package 9** — completed maintenance can create one linked expense idempotently; funnel/SLA metrics with CSV export and uncontacted-lead reminders; a property status board with guarded quick transitions.
+- **Package 10** — per-endpoint in-memory rate limits with `429`/`Retry-After`, security headers and `X-Request-Id`, deep health checks, ADMIN-only snapshot export, a bounded-query audit and synced documentation.
 
 ## Documentation
 

@@ -4,7 +4,13 @@ import { prisma } from '../prisma'
 import { authMiddleware } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
 import { organizationIdOf, userIdOf } from '../utils/scope'
-import { pagination } from '../utils/validation'
+import { enumValue, pagination } from '../utils/validation'
+import {
+  NOTIFICATION_CATEGORIES,
+  notificationCategoryOf,
+  notificationCategoryTypeFilter,
+  resolveNotificationTarget
+} from '../utils/notificationTargets'
 
 const router = Router()
 router.use(authMiddleware)
@@ -22,17 +28,33 @@ router.get('/', async (req, res, next) => {
     const organizationId = organizationIdOf(req)
     const { page, limit, skip } = pagination(req.query as Record<string, unknown>)
     const unreadOnly = String(req.query.unread || req.query.isRead || '') === 'true' || String(req.query.unread) === '1'
-    const where = scope(userId, organizationId)
-    if (unreadOnly) where.isRead = false
+    const rawCategory = req.query.category
+    const category = rawCategory === undefined || rawCategory === '' || rawCategory === 'ALL'
+      ? 'ALL'
+      : enumValue(rawCategory, 'category', [...NOTIFICATION_CATEGORIES, 'ALL'])
+    const typeFilter = notificationCategoryTypeFilter(category)
+    const where: Prisma.NotificationWhereInput = {
+      ...scope(userId, organizationId),
+      ...(Object.keys(typeFilter).length ? { AND: [typeFilter as Prisma.NotificationWhereInput] } : {}),
+      ...(unreadOnly ? { isRead: false } : {})
+    }
+    const unreadScope = scope(userId, organizationId)
 
-    const [total, notifications, unreadCount] = await Promise.all([
+    const [notifications, total, unreadCount] = await Promise.all([
+      prisma.notification.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
       prisma.notification.count({ where }),
-      prisma.notification.findMany({ where, skip, take: limit, orderBy: { createdAt: 'desc' } }),
-      prisma.notification.count({ where: { ...scope(userId, organizationId), isRead: false } })
+      // The unread badge is global on purpose: switching categories must not
+      // hide unread items that belong to other categories.
+      prisma.notification.count({ where: { ...unreadScope, isRead: false } })
     ])
+    const data = notifications.map((row) => ({
+      ...row,
+      category: notificationCategoryOf(row.type),
+      targetUrl: resolveNotificationTarget(row)
+    }))
     res.json({
       success: true,
-      data: notifications,
+      data,
       unreadCount,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     })

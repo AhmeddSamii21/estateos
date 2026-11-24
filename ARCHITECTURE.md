@@ -48,9 +48,18 @@ Prisma Client 6.4.1 ──► PostgreSQL (schema.prisma + prisma/migrations/)
 - **CSV export** — triggered in the UI; property export pages through all filtered results, reports and generic resource lists export loaded rows.
 - **Share summary** — built on the client from public listing fields, copied to clipboard (with a manual-copy preview fallback); `POST /api/properties/:id/share-summary` records an audit/activity entry. Internal, owner, deal and finance data are never included.
 
+## Delivery packages 5–10
+
+- **Package 5** — `frontend/src/utils/csv.ts` export path shared by Properties, Reports and resource lists.
+- **Package 6** — follow-up/lease helpers in `backend/utils/`, reminder jobs in `backend/services/`, consolidated statements in `commissionStatements.ts`.
+- **Package 7** — owner statement, price history and duplication helpers plus matching frontend utilities and detail-view panels.
+- **Package 8** — `csvImport.ts`, `propertyImport.ts`, `leadImport.ts`, `installmentSchedule.ts` and `notificationTargets.ts` keep parsing, math and URL safety pure; routes compose them with tenant scope and transactions. Import modals and a notification resolver live under `frontend/src/`.
+- **Package 9** — `maintenanceExpense.ts`, `reportMetrics.ts` and `propertyBoard.ts`; maintenance writes one linked expense via a unique relation, reports expose funnel/SLA, and PropertyList groups by status.
+- **Package 10** — `inMemoryRateLimit.ts`, `health.ts`, `snapshot.ts` and `queryAudit.ts` back per-endpoint limits, deep health, ADMIN snapshot export and bounded list queries. Request IDs and explicit security headers are installed in `backend/index.ts` and echoed by `errorHandler.ts`.
+
 ## Tests
 
-`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 77 tests. Three suites (`auth-state`, `deal-workflow`, `user-authorization`) start the API and use Prisma against the configured PostgreSQL database; the rest run offline. Each database-backed suite creates tagged fixtures and removes them in `test.after`.
+`tests/*.test.js` use Node's built-in `node:test`. `npm test` runs all 131 tests. Three suites (`auth-state`, `deal-workflow`, `user-authorization`) start the API and use Prisma against the configured PostgreSQL database; the rest run offline. Each database-backed suite creates tagged fixtures and removes them in `test.after`.
 
 ## Legacy prototype
 

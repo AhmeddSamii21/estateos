@@ -87,6 +87,15 @@
             <div v-if="notificationsOpen" class="notification-panel" @click.stop>
               <div class="notification-head">
                 <strong>{{ t('Notifications') }}</strong>
+                <select
+                  v-model="notificationCategory"
+                  class="notification-category"
+                  aria-label="Category"
+                  @change="onCategoryChange"
+                >
+                  <option value="">{{ store.isArabic ? 'الكل' : 'All' }}</option>
+                  <option v-for="item in NOTIFICATION_CATEGORIES" :key="item" :value="item">{{ item }}</option>
+                </select>
                 <button class="link" type="button" @click="markAll">{{ store.isArabic ? 'تحديد الكل كمقروء' : 'Mark all read' }}</button>
               </div>
               <div v-if="!store.notifications.length" class="notification-empty">{{ store.isArabic ? 'لا توجد إشعارات' : 'No notifications' }}</div>
@@ -94,6 +103,7 @@
                 <li v-for="item in store.notifications.slice(0, 8)" :key="item.id" :class="{ unread: !item.isRead }">
                   <button type="button" @click="openNotification(item)">
                     <span class="n-title">{{ item.title }}</span>
+                    <span class="n-category">{{ notificationCategoryOf(item.type) }}</span>
                     <span class="n-message">{{ item.message }}</span>
                     <span class="n-time">{{ formatNotificationTime(item.createdAt) }}</span>
                   </button>
@@ -142,12 +152,21 @@ import SearchModal from '@/components/SearchModal.vue'
 import { useStore } from '@/stores'
 import { useSearchStore } from '@/stores/search'
 import type { AppNotification } from '@/types'
+import {
+  NOTIFICATION_CATEGORIES,
+  notificationCategoryOf,
+  resolveNotificationTarget,
+  type NotificationCategory
+} from '@/utils/notificationTargets'
+
+type NotificationWithTarget = AppNotification & { targetUrl?: string | null }
 
 const store = useStore()
 const searchStore = useSearchStore()
 const route = useRoute()
 const router = useRouter()
 const notificationsOpen = ref(false)
+const notificationCategory = ref<'' | NotificationCategory>('')
 
 const ArabicLabels: Record<string, string> = {
   Search: 'بحث',
@@ -188,7 +207,13 @@ async function onLogout(): Promise<void> {
 
 async function toggleNotifications(): Promise<void> {
   notificationsOpen.value = !notificationsOpen.value
-  if (notificationsOpen.value) await store.fetchNotifications({ limit: 20 })
+  if (notificationsOpen.value) {
+    await store.fetchNotifications({ limit: 20, category: notificationCategory.value || undefined })
+  }
+}
+
+async function onCategoryChange(): Promise<void> {
+  await store.fetchNotifications({ limit: 20, category: notificationCategory.value || undefined })
 }
 
 async function markAll(): Promise<void> {
@@ -198,7 +223,14 @@ async function markAll(): Promise<void> {
 async function openNotification(item: AppNotification): Promise<void> {
   notificationsOpen.value = false
   if (!item.isRead) await store.markNotificationRead(item.id)
-  if (item.actionUrl) void router.push(item.actionUrl)
+  const notification = item as NotificationWithTarget
+  const target = resolveNotificationTarget({
+    entityType: notification.entityType,
+    entityId: notification.entityId,
+    actionUrl: notification.actionUrl,
+    targetUrl: notification.targetUrl
+  })
+  if (target) await router.push(target)
 }
 
 function formatNotificationTime(value: string): string {
@@ -332,14 +364,16 @@ onBeforeUnmount(() => {
 .badge-count { position: absolute; top: -4px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.68rem; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
 .notification-wrap { position: relative; }
 .notification-panel { position: absolute; top: calc(100% + 8px); inset-inline-end: 0; width: min(360px, calc(100vw - 2rem)); background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(15,23,42,0.12); z-index: 40; overflow: hidden; }
-.notification-head { display: flex; justify-content: space-between; align-items: center; padding: 0.7rem 0.9rem; border-bottom: 1px solid #eef2f7; }
+.notification-head { display: flex; justify-content: space-between; align-items: center; gap: 0.4rem; padding: 0.7rem 0.9rem; border-bottom: 1px solid #eef2f7; }
 .notification-head .link { background: none; border: 0; color: #4f46e5; cursor: pointer; font-size: 0.78rem; }
+.notification-category { max-width: 110px; border: 1px solid #d1d5db; border-radius: 6px; padding: 0.2rem 0.3rem; font-size: 0.72rem; }
 .notification-empty { padding: 1.2rem; color: #6b7280; font-size: 0.85rem; text-align: center; }
 .notification-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; }
 .notification-list li { border-bottom: 1px solid #f3f4f6; }
 .notification-list li.unread { background: #f8faff; }
 .notification-list button { width: 100%; text-align: start; background: none; border: 0; padding: 0.7rem 0.9rem; cursor: pointer; display: flex; flex-direction: column; gap: 0.2rem; }
 .n-title { font-size: 0.84rem; font-weight: 600; color: #111827; }
+.n-category { font-size: 0.66rem; color: #3730a3; background: #eef2ff; border-radius: 999px; padding: 0.05rem 0.35rem; align-self: flex-start; }
 .n-message { font-size: 0.78rem; color: #4b5563; line-height: 1.4; }
 .n-time { font-size: 0.7rem; color: #6b7280; }
 .notification-footer { display: block; text-align: center; padding: 0.7rem; font-size: 0.82rem; color: #4f46e5; text-decoration: none; border-top: 1px solid #eef2f7; }

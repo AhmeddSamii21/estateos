@@ -220,6 +220,7 @@ export async function loadAccessibleEntities(
           organizationId: org,
           ...(isAgent(viewer) ? { assignedAgentId: agentId } : {})
         },
+        take: 200,
         select: { id: true, referenceNumber: true, title: true, status: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -237,6 +238,7 @@ export async function loadAccessibleEntities(
           id: { in: uniqueIds },
           ...ownerReadScope(org)
         },
+        take: 200,
         select: { id: true, firstName: true, lastName: true, companyName: true, isActive: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -253,6 +255,7 @@ export async function loadAccessibleEntities(
           id: { in: uniqueIds },
           ...leadScope(org)
         },
+        take: 200,
         select: { id: true, firstName: true, lastName: true, status: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -270,6 +273,7 @@ export async function loadAccessibleEntities(
           organizationId: org,
           ...(!canViewAllDeals(viewer) ? { userId: agentId } : {})
         },
+        take: 200,
         select: { id: true, referenceNumber: true, status: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -283,6 +287,7 @@ export async function loadAccessibleEntities(
       if (!isFinanceRole(viewer)) return []
       const rows = await prisma.payment.findMany({
         where: { id: { in: uniqueIds }, deal: { organizationId: org } },
+        take: 200,
         select: { id: true, reference: true, status: true, currency: true, deletedAt: true, deal: { select: { referenceNumber: true } } }
       })
       return rows.map((row) => ({
@@ -304,6 +309,7 @@ export async function loadAccessibleEntities(
             { OR: [{ responsibleId: null }, { responsible: { organizationId: org } }] }
           ]
         },
+        take: 200,
         select: { id: true, category: true, status: true, currency: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -319,6 +325,7 @@ export async function loadAccessibleEntities(
           id: { in: uniqueIds },
           ...appointmentScope(org)
         },
+        take: 200,
         select: { id: true, title: true, type: true, status: true, startsAt: true }
       })
       return rows.map((row) => ({
@@ -335,6 +342,7 @@ export async function loadAccessibleEntities(
           organizationId: org,
           ...(isAgent(viewer) ? { assignedToId: agentId } : {})
         },
+        take: 200,
         select: { id: true, title: true, status: true, priority: true, deletedAt: true }
       })
       return rows.map((row) => ({
@@ -361,6 +369,7 @@ export async function loadAccessibleEntities(
               }
             : {})
         },
+        take: 200,
         select: { id: true, name: true, category: true, status: true }
       })
       return rows.map((row) => ({
@@ -374,6 +383,7 @@ export async function loadAccessibleEntities(
       if (!isFinanceRole(viewer)) return []
       const rows = await prisma.commission.findMany({
         where: { id: { in: uniqueIds }, deal: { organizationId: org } },
+        take: 200,
         select: { id: true, status: true, currency: true, deletedAt: true, deal: { select: { referenceNumber: true } } }
       })
       return rows.map((row) => ({

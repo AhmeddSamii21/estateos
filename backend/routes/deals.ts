@@ -1,9 +1,10 @@
 import { Router } from 'express'
-import { DealStatus, DealType, Prisma } from '@prisma/client'
+import crypto from 'node:crypto'
+import { DealStatus, DealType, PaymentStatus, Prisma } from '@prisma/client'
 import { prisma } from '../prisma'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createError } from '../middleware/errorHandler'
-import { leadScope, MANAGEMENT_ROLES, organizationIdOf, userIdOf } from '../utils/scope'
+import { FINANCE_ROLES, leadScope, MANAGEMENT_ROLES, organizationIdOf, roleOf, userIdOf } from '../utils/scope'
 import { dateValue, enumValue, numberValue, optionalString, pagination, requiredString } from '../utils/validation'
 import { convertToBase, parseMoney } from '../utils/money'
 import { logAudit, logPropertyActivity } from '../utils/audit'
@@ -11,6 +12,7 @@ import { assertDealTransition, assertInitialDealStatus } from '../utils/dealStat
 import { listEntityActivity } from '../services/activity'
 import { notifyUsers, organizationRecipientIds } from '../services/notifications'
 import { nullableDateValue } from '../utils/followUps'
+import { buildInstallmentSchedule, installmentPaymentReferences, type InstallmentFrequency } from '../utils/installmentSchedule'
 import {
   assertValidLease,
   daysUntilLeaseEnd,
@@ -285,6 +287,113 @@ router.post('/', async (req, res, next) => {
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return next(createError('A deal with this reference number already exists', 409))
+    }
+    next(error)
+  }
+})
+
+/**
+ * Schedules a batch of pending installment payments for a deal. Reusing a
+ * batchKey is idempotent: existing active scheduled payments are returned
+ * instead of being duplicated.
+ */
+router.post('/:id/installments', async (req, res, next) => {
+  try {
+    const organizationId = organizationIdOf(req)
+    const userId = userIdOf(req)
+    const id = String(req.params.id)
+    const deal = await prisma.deal.findFirst({ where: { id, organizationId, deletedAt: null } })
+    if (!deal) throw createError('Deal not found', 404)
+
+    const role = roleOf(req)
+    const isFinance = role !== undefined && FINANCE_ROLES.includes(role)
+    if (!isFinance && deal.userId !== userId) {
+      throw createError('Insufficient permissions to manage installments for this deal', 403)
+    }
+    if (deal.status === DealStatus.CANCELLED) {
+      throw createError('Cannot schedule installments for a cancelled deal', 400)
+    }
+
+    const body = req.body as Record<string, unknown>
+    for (const key of ['downPayment', 'installmentCount', 'frequency', 'firstDueDate']) {
+      if (body[key] === undefined || body[key] === null || body[key] === '') {
+        throw createError(`${key} is required`, 400)
+      }
+    }
+    const currency = optionalString(body.currency, 'currency', 3)?.toUpperCase()
+    if (currency && (!/^[A-Z]{3}$/.test(currency) || currency !== deal.currency.toUpperCase())) {
+      throw createError('currency must be a 3-letter code matching the deal currency', 400)
+    }
+    const requestedKey = optionalString(body.batchKey, 'batchKey', 100)
+    const batchKey = requestedKey
+      ? requestedKey.replace(/[^A-Za-z0-9_-]/g, '')
+      : crypto.randomUUID()
+    if (!batchKey) throw createError('batchKey must contain at least one valid character', 400)
+
+    const schedule = buildInstallmentSchedule({
+      dealAmount: deal.amount.toString(),
+      downPayment: body.downPayment,
+      installmentCount: body.installmentCount,
+      frequency: body.frequency as InstallmentFrequency,
+      firstDueDate: body.firstDueDate
+    })
+
+    const prefix = `INST-${batchKey}-`
+    const existing = await prisma.payment.findMany({
+      where: { dealId: id, reference: { startsWith: prefix }, deletedAt: null },
+      orderBy: { dueAt: 'asc' },
+      take: 1,
+      select: { id: true }
+    })
+    if (existing.length > 0) {
+      return res.json({
+        success: true,
+        data: { ...schedule, batchKey, payments: existing },
+        message: 'Installment schedule already exists'
+      })
+    }
+
+    const references = installmentPaymentReferences(batchKey, schedule.installmentCount)
+    const baseCurrency = await baseCurrencyOf(organizationId)
+    const payments = await prisma.$transaction(async (tx) => {
+      const created: Array<Awaited<ReturnType<typeof prisma.payment.create>>> = []
+      for (const row of schedule.installments) {
+        const conversion = convertToBase(row.amount, deal.currency, baseCurrency, 1)
+        const payment = await tx.payment.create({
+          data: {
+            dealId: id,
+            amount: row.amount,
+            currency: deal.currency,
+            baseAmount: conversion.baseAmount,
+            exchangeRate: conversion.exchangeRate,
+            status: PaymentStatus.PENDING,
+            reference: references[row.index - 1],
+            idempotencyKey: `INSTALLMENT-${batchKey}-${row.index}`,
+            dueAt: new Date(row.dueAt),
+            paidAt: null,
+            createdById: userId,
+            notes: `Scheduled installment ${row.index}`
+          }
+        })
+        created.push(payment)
+      }
+      await logAudit(tx, {
+        userId,
+        action: 'DEAL_INSTALLMENTS_SCHEDULED',
+        entityType: 'Deal',
+        entityId: id,
+        details: { batchKey, count: created.length, total: schedule.total }
+      })
+      return created
+    })
+    res.json({
+      success: true,
+      data: { ...schedule, batchKey, payments },
+      message: 'Installment schedule created'
+    })
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return next(createError('An installment with this reference already exists', 409))
     }
     next(error)
   }
