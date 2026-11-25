@@ -199,106 +199,84 @@
       </section>
     </template>
 
-    <div v-if="selected" class="drawer-backdrop no-print" @click.self="closeDrawer">
-      <aside class="drawer" :dir="store.direction" role="dialog" aria-modal="true" :aria-label="selected.label">
-        <header class="drawer-header">
-          <div class="drawer-heading">
-            <span class="drawer-eyebrow">{{ store.isArabic ? 'فحص الوحدة' : 'Unit inspection' }}</span>
-            <h2>{{ selected.label }}</h2>
-            <p class="muted">{{ selected.title }}</p>
-          </div>
-          <span class="status-pill drawer-status" :style="{ background: selected.color }">
-            {{ mapStatusLabel(selected.status, store.isArabic ? 'ar' : 'en') }}
-          </span>
-          <button class="drawer-close" type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeDrawer">×</button>
-        </header>
+    <!-- Compact inspection card: floats over the map instead of replacing it. -->
+    <aside v-if="selected" class="inspect-card" :dir="store.direction" role="dialog" :aria-label="selected.label">
+      <header class="inspect-header">
+        <div class="inspect-heading">
+          <span class="inspect-eyebrow">{{ store.isArabic ? 'فحص الوحدة' : 'Unit inspection' }}</span>
+          <h2>{{ selected.label }}</h2>
+          <p class="muted">{{ selected.title }}</p>
+        </div>
+        <span class="status-pill" :style="{ background: selected.color }">
+          {{ mapStatusLabel(selected.status, store.isArabic ? 'ar' : 'en') }}
+        </span>
+        <button class="inspect-close" type="button" :aria-label="store.isArabic ? 'إغلاق' : 'Close'" @click="closeDrawer">×</button>
+      </header>
 
-        <div class="drawer-body">
-          <dl class="spec-grid">
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'المشروع' : 'Project' }}</dt>
-              <dd>{{ selected.project }}</dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'المبنى' : 'Building' }}</dt>
-              <dd>{{ selected.building }}</dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'الحالة' : 'Status' }}</dt>
-              <dd><span class="status-pill" :style="{ background: selected.color }">{{ mapStatusLabel(selected.status, store.isArabic ? 'ar' : 'en') }}</span></dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'السعر' : 'Price' }}</dt>
-              <dd><strong>{{ formatMoney(selected.price, selected.currency) }}</strong></dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'المساحة' : 'Area' }}</dt>
-              <dd>{{ selected.area }} {{ store.isArabic ? 'م²' : 'm²' }}</dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'الدور' : 'Floor' }}</dt>
-              <dd>{{ floorLabel(selected.floor) }}</dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'النوع' : 'Type' }}</dt>
-              <dd>{{ selected.type }}</dd>
-            </div>
-            <div class="spec">
-              <dt>{{ store.isArabic ? 'غرف النوم' : 'Bedrooms' }}</dt>
-              <dd>{{ selected.bedrooms }}</dd>
-            </div>
-          </dl>
-
-          <section v-if="canUpdateStatus" class="drawer-section">
-            <h3>{{ store.isArabic ? 'تحديث سريع للحالة' : 'Quick status update' }}</h3>
-            <div class="status-actions">
-              <button
-                v-for="status in quickStatuses"
-                :key="status"
-                class="btn btn-quiet"
-                type="button"
-                :disabled="saving"
-                @click="setStatus(status)"
-              >
-                {{ mapStatusLabel(status, store.isArabic ? 'ar' : 'en') }}
-              </button>
-            </div>
-            <p v-if="!quickStatuses.length" class="muted small">
-              {{ store.isArabic ? 'لا يمكن تغيير حالة هذه الوحدة.' : 'This unit status cannot be changed further.' }}
-            </p>
-          </section>
-
-          <section v-if="canCoordinate" class="drawer-section">
-            <h3>{{ store.isArabic ? 'موقع المؤشر' : 'Pin position' }}</h3>
-            <div class="coordinate-grid">
-              <label>
-                <span>X %</span>
-                <input v-model.number="coordinates.mapX" type="number" min="0" max="100" step="0.1" />
-              </label>
-              <label>
-                <span>Y %</span>
-                <input v-model.number="coordinates.mapY" type="number" min="0" max="100" step="0.1" />
-              </label>
-            </div>
-            <button class="btn btn-quiet" type="button" :disabled="saving" @click="saveCoordinates">
-              {{ saving ? '…' : (store.isArabic ? 'حفظ الموقع' : 'Save position') }}
-            </button>
-          </section>
+      <div class="inspect-body">
+        <div class="inspect-price">
+          <strong>{{ formatMoney(selected.price, selected.currency) }}</strong>
+          <span>{{ selected.area }} {{ store.isArabic ? 'م²' : 'm²' }} · {{ floorLabel(selected.floor) }}</span>
         </div>
 
-        <footer class="drawer-footer">
-          <router-link class="btn btn-primary" :to="`/properties/${selected.id}`">
-            {{ store.isArabic ? 'تفاصيل العقار' : 'Property details' }}
-          </router-link>
+        <dl class="inspect-specs">
+          <div><dt>{{ store.isArabic ? 'المشروع' : 'Project' }}</dt><dd>{{ selected.project }}</dd></div>
+          <div><dt>{{ store.isArabic ? 'المبنى' : 'Building' }}</dt><dd>{{ selected.building }}</dd></div>
+          <div><dt>{{ store.isArabic ? 'النوع' : 'Type' }}</dt><dd>{{ selected.type }}</dd></div>
+          <div><dt>{{ store.isArabic ? 'غرف النوم' : 'Bedrooms' }}</dt><dd>{{ selected.bedrooms }}</dd></div>
+        </dl>
+
+        <section v-if="canUpdateStatus" class="inspect-section">
+          <h3>{{ store.isArabic ? 'تحديث سريع للحالة' : 'Quick status update' }}</h3>
+          <div class="status-actions">
+            <button
+              v-for="status in quickStatuses"
+              :key="status"
+              class="status-action"
+              type="button"
+              :disabled="saving"
+              @click="setStatus(status)"
+            >
+              {{ mapStatusLabel(status, store.isArabic ? 'ar' : 'en') }}
+            </button>
+          </div>
+          <p v-if="!quickStatuses.length" class="muted small">
+            {{ store.isArabic ? 'لا يمكن تغيير حالة هذه الوحدة.' : 'This unit status cannot be changed further.' }}
+          </p>
+        </section>
+
+        <details v-if="canCoordinate" class="inspect-more">
+          <summary>{{ store.isArabic ? 'موقع المؤشر' : 'Pin position' }}</summary>
+          <div class="coordinate-grid">
+            <label>
+              <span>X %</span>
+              <input v-model.number="coordinates.mapX" type="number" min="0" max="100" step="0.1" />
+            </label>
+            <label>
+              <span>Y %</span>
+              <input v-model.number="coordinates.mapY" type="number" min="0" max="100" step="0.1" />
+            </label>
+          </div>
+          <button class="btn btn-quiet" type="button" :disabled="saving" @click="saveCoordinates">
+            {{ saving ? '…' : (store.isArabic ? 'حفظ الموقع' : 'Save position') }}
+          </button>
+        </details>
+      </div>
+
+      <footer class="inspect-footer">
+        <router-link class="btn btn-primary" :to="`/properties/${selected.id}`">
+          {{ store.isArabic ? 'تفاصيل العقار' : 'Property details' }}
+        </router-link>
+        <div class="inspect-links">
           <button class="btn btn-quiet" type="button" @click="openSimulator">
             <i class="fas fa-calculator"></i> {{ store.isArabic ? 'محاكاة الأقساط' : 'Installment simulator' }}
           </button>
           <button class="btn btn-quiet" type="button" @click="addToComparison">
             <i class="fas fa-code-compare"></i> {{ store.isArabic ? 'أضف للمقارنة' : 'Compare' }}
           </button>
-        </footer>
-      </aside>
-    </div>
+        </div>
+      </footer>
+    </aside>
   </div>
 </template>
 
@@ -517,6 +495,9 @@ function highlightSelected(): void {
 }
 
 function openUnit(unit: MapPin): void {
+  // Dismiss the Leaflet popup first so it can never overlap the inspection
+  // card, then keep the map visible behind the compact card.
+  map?.closePopup()
   selected.value = unit
   coordinates.value = { mapX: unit.mapX ?? 50, mapY: unit.mapY ?? 50 }
   highlightSelected()
@@ -525,6 +506,10 @@ function openUnit(unit: MapPin): void {
 function closeDrawer(): void {
   selected.value = null
   highlightSelected()
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && selected.value) closeDrawer()
 }
 
 async function setStatus(status: string): Promise<void> {
@@ -607,10 +592,12 @@ watch(() => result.value, () => { fitOnNextRender = true; void nextTick(renderMa
 watch(activeProjectKey, () => { fallbackImage.value = false })
 
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
   void load().then(() => { void nextTick(setupMap) })
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
   map?.remove()
   map = null
   markers = null
@@ -697,29 +684,34 @@ onBeforeUnmount(() => {
 .unit-table small { display: block; font-size: 0.72rem; }
 .status-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; color: #fff; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 
-/* Full-height flex drawer: sticky header, scrolling body, sticky footer. */
-.drawer-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; align-items: stretch; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); }
-.drawer { position: fixed; inset-block: 0; inset-inline-end: 0; z-index: 50; width: 100%; max-width: 28rem; height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: #fff; box-shadow: -18px 0 50px -20px rgba(15, 23, 42, 0.5); }
-.drawer-header { position: sticky; top: 0; z-index: 1; flex-shrink: 0; display: flex; align-items: flex-start; gap: 0.75rem; padding: 1.2rem 1.5rem; border-bottom: 1px solid #e2e8f0; background: #fff; }
-.drawer-heading { flex: 1 1 auto; min-width: 0; }
-.drawer-eyebrow { display: block; margin-bottom: 0.25rem; color: #64748b; font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-.drawer-heading h2 { margin: 0; font-size: 1.35rem; line-height: 1.2; overflow-wrap: anywhere; }
-.drawer-heading p { margin: 0.25rem 0 0; font-size: 0.8rem; }
-.drawer-status { flex: 0 0 auto; margin-top: 0.15rem; }
-.drawer-close { flex: 0 0 auto; width: 2rem; height: 2rem; border: 0; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 1.25rem; line-height: 1; cursor: pointer; }
-.drawer-close:hover { background: #e2e8f0; }
-.drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 1.25rem; align-content: start; padding: 1.5rem; }
-.spec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; margin: 0; }
-.spec { min-width: 0; padding: 0.7rem 0.8rem; border: 1px solid #eef2f7; border-radius: 0.75rem; background: #f8fafc; }
-.spec dt { margin-bottom: 0.25rem; color: #64748b; font-size: 0.7rem; }
-.spec dd { margin: 0; font-size: 0.86rem; font-weight: 600; overflow-wrap: anywhere; }
-.drawer-section { padding-top: 1rem; border-top: 1px solid #e2e8f0; }
-.drawer-section h3 { margin: 0 0 0.6rem; font-size: 0.92rem; }
-.coordinate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem; }
-.coordinate-grid label { display: grid; gap: 0.25rem; font-size: 0.76rem; color: #475569; }
-.drawer-footer { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; background: #f8fafc; }
-.drawer-footer .btn { width: 100%; text-align: center; }
-.drawer-footer .btn-primary { grid-column: 1 / -1; }
+/* Compact inspection card floats over the map; the map stays visible. */
+.inspect-card { position: fixed; inset-block-start: 5rem; inset-inline-end: 1rem; z-index: 1000; width: min(21rem, calc(100vw - 2rem)); max-height: min(70dvh, 620px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 0.9rem; background: #fff; box-shadow: 0 18px 45px -18px rgba(15, 23, 42, 0.45); }
+.inspect-header { position: relative; flex-shrink: 0; display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.8rem 2.4rem 0.7rem 0.95rem; border-bottom: 1px solid #e2e8f0; background: linear-gradient(135deg, rgba(15, 118, 110, 0.1), rgba(15, 118, 110, 0)); }
+.inspect-heading { flex: 1 1 auto; min-width: 0; }
+.inspect-eyebrow { display: block; color: #64748b; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.inspect-heading h2 { margin: 0.15rem 0 0; font-size: 1.05rem; line-height: 1.2; overflow-wrap: anywhere; }
+.inspect-heading p { margin: 0.15rem 0 0; font-size: 0.72rem; }
+.inspect-close { position: absolute; inset-block-start: 0.5rem; inset-inline-end: 0.5rem; width: 1.8rem; height: 1.8rem; border: 0; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 1.15rem; line-height: 1; cursor: pointer; }
+.inspect-close:hover { background: #e2e8f0; }
+.inspect-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: 0.75rem; align-content: start; padding: 0.8rem 0.95rem; }
+.inspect-price { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.3rem; }
+.inspect-price strong { font-size: 1.15rem; color: #0f766e; }
+.inspect-price span { color: #64748b; font-size: 0.74rem; }
+.inspect-specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 0.7rem; margin: 0; }
+.inspect-specs div { min-width: 0; }
+.inspect-specs dt { color: #64748b; font-size: 0.65rem; }
+.inspect-specs dd { margin: 0.1rem 0 0; font-size: 0.78rem; font-weight: 600; overflow-wrap: anywhere; }
+.inspect-section, .inspect-more { padding-top: 0.65rem; border-top: 1px solid #e2e8f0; }
+.inspect-section h3 { margin: 0 0 0.45rem; font-size: 0.76rem; }
+.status-action { padding: 0.25rem 0.55rem; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #334155; font-size: 0.7rem; font-weight: 600; cursor: pointer; }
+.status-action:hover:not(:disabled) { border-color: #0f766e; color: #0f766e; }
+.status-action:disabled { opacity: 0.55; cursor: default; }
+.inspect-more summary { color: #475569; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+.coordinate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0.5rem 0; }
+.coordinate-grid label { display: grid; gap: 0.2rem; font-size: 0.7rem; color: #475569; }
+.inspect-footer { flex-shrink: 0; display: grid; gap: 0.4rem; padding: 0.65rem 0.95rem; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+.inspect-footer .btn { width: 100%; text-align: center; font-size: 0.75rem; padding: 0.4rem 0.6rem; }
+.inspect-links { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 720px) {
@@ -727,21 +719,20 @@ onBeforeUnmount(() => {
   .stack-row { grid-template-columns: 1fr; }
   .filters { grid-template-columns: 1fr 1fr; }
   .geo-map { height: 420px; min-height: 300px; }
-  .drawer-header, .drawer-body, .drawer-footer { padding-inline: 1rem; }
-  .drawer-footer { grid-template-columns: 1fr; }
-  .drawer-footer .btn-primary { grid-column: auto; }
-  .spec-grid { grid-template-columns: 1fr; }
+  .inspect-card { inset-block: auto 0.75rem; inset-inline: 0.75rem; width: auto; max-height: 62dvh; }
+  .inspect-links { grid-template-columns: 1fr; }
+  .inspect-specs { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .filters { grid-template-columns: 1fr; }
   .view-switch, .map-switch { width: 100%; justify-content: space-between; }
 }
 @media print {
-  .no-print, .geo-wrap, .masterplan-panel, .drawer-footer, .drawer-close { display: none !important; }
+  .no-print, .geo-wrap, .masterplan-panel { display: none !important; }
   .page { display: block; }
   .unit-table { font-size: 0.72rem; }
-  .drawer-backdrop { position: static; z-index: auto; background: none; backdrop-filter: none; display: block; }
-  .drawer { position: static; width: 100%; max-width: none; height: auto; display: block; overflow: visible; box-shadow: none; }
-  .drawer-header, .drawer-body { position: static; padding: 0; border: 0; background: none; overflow: visible; }
+  .inspect-card { position: static; max-height: none; width: 100%; border: 0; box-shadow: none; break-inside: avoid; }
+  .inspect-body { overflow: visible; padding: 0; }
+  .inspect-close, .inspect-more, .status-actions, .inspect-links { display: none !important; }
 }
 </style>

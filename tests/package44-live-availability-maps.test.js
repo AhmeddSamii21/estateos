@@ -370,10 +370,15 @@ test('Package 44: additive schema, routes, bilingual UI and offline demo are wir
   assert.match(view, /map\.closePopup\(\)/)
   assert.match(view, /padding: \[48, 48\], maxZoom: 13/)
   assert.match(view, /basemaps\.cartocdn\.com/)
-  assert.match(view, /drawer-header/)
-  assert.match(view, /drawer-body/)
-  assert.match(view, /drawer-footer/)
+  // Floating inspection card: must not be a full-screen backdrop drawer and
+  // must stay above Leaflet panes while leaving the map visible.
+  assert.match(view, /inspect-card/)
+  assert.match(view, /inspect-body/)
+  assert.match(view, /inspect-footer/)
+  assert.match(view, /max-height:/)
   assert.match(view, /overflow-y: auto/)
+  assert.match(view, /z-index: 1000/)
+  assert.doesNotMatch(view, /drawer-backdrop/)
   assert.match(view, /mapStatusLabel\(unit\.status/)
   assert.match(view, /mapStatusLabel\(selected\.status/)
   assert.match(view, /OFF_MARKET/)
